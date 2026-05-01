@@ -917,6 +917,10 @@ function fmtDateLong(iso) {
   const d = new Date(iso + 'T00:00:00');
   return `${d.getDate()} ${TH_MONTH_LONG[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
+function fmtDateTitle(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return `วัน${TH_DAY_SHORT[d.getDay()]}ที่ ${fmtDateLong(iso)}`;
+}
 function fmtDateShort(iso) {
   const d = new Date(iso + 'T00:00:00');
   return `${d.getDate()} ${TH_MONTH_SHORT[d.getMonth()]}`;
