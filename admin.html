@@ -491,14 +491,40 @@
     display: flex; justify-content: space-between; align-items: flex-start;
     gap: 10px; margin-bottom: 6px;
   }
-  .booking-row-name { font-weight: 800; font-size: 15px; color: var(--text); }
-  .booking-row-contact { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .booking-row-when {
-    display: inline-flex; gap: 8px; align-items: center;
-    font-size: 12px; color: var(--text); font-weight: 600;
+  .booking-row-name { font-weight: 800; font-size: 16px; color: var(--text); }
+  .booking-row-key {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    align-items: center;
+    margin: 10px 0 6px;
+  }
+  .key-phone {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", monospace;
+    letter-spacing: 0.5px;
+  }
+  .key-people {
+    background: linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 100%);
+    color: #fff;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    box-shadow: 0 4px 10px rgba(255, 122, 109, 0.3);
+  }
+  .booking-row-secondary {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    align-items: center;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .booking-row-secondary .when-chip {
     background: var(--brand-cream);
     padding: 4px 12px; border-radius: 999px;
-    margin-top: 6px;
+    color: var(--text); font-weight: 600;
   }
   .booking-row-code {
     display: inline-block;
@@ -508,7 +534,6 @@
     background: #FFF;
     padding: 4px 12px; border-radius: 8px;
     border: 1.5px dashed var(--brand-red);
-    margin-top: 6px; margin-left: 6px;
     font-size: 12px;
   }
   .booking-row-actions {
@@ -1443,20 +1468,25 @@ function renderBookingRow(b) {
   const transferLine = b.original_date
     ? `<div style="font-size:11px; color:#3730A3; margin-top:6px;">↪ ย้ายมาจาก ${fmtDateShort(b.original_date)} · ${fmtSlot(b.original_time)}</div>`
     : '';
+  const emailPart = b.email
+    ? `<span>📧 ${escapeHtml(b.email)}</span>`
+    : '';
 
   div.innerHTML = `
     <div class="booking-row-head">
-      <div>
-        <div class="booking-row-name">${escapeHtml(b.name)}</div>
-        <div class="booking-row-contact">${escapeHtml(b.phone)} · ${escapeHtml(b.email)}</div>
-      </div>
+      <div class="booking-row-name">${escapeHtml(b.name)}</div>
       <div style="text-align:right;">
         ${statusBadge}${usedBadge}
       </div>
     </div>
-    <div>
-      <span class="booking-row-when">📅 ${fmtDateShort(b.booking_date)} · ⏰ ${fmtSlot(b.time_slot)} · ${b.num_people} คน</span>
+    <div class="booking-row-key">
+      <span class="key-phone">📱 ${escapeHtml(b.phone)}</span>
+      <span class="key-people">👥 ${b.num_people} คน</span>
+    </div>
+    <div class="booking-row-secondary">
+      <span class="when-chip">📅 ${fmtDateShort(b.booking_date)} · ⏰ ${fmtSlot(b.time_slot)}</span>
       ${b.code ? `<span class="booking-row-code">${escapeHtml(b.code)}</span>` : ''}
+      ${emailPart}
     </div>
     ${transferLine}
     <div class="booking-row-actions">${actions.join('')}</div>
