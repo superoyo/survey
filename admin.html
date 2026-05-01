@@ -384,6 +384,46 @@
   .stat-value { font-size: 22px; font-weight: 800; margin-top: 2px; color: var(--text); letter-spacing: -0.5px; }
   .stat .small { font-size: 12px; color: var(--muted); margin-left: 4px; font-weight: 500; }
 
+  /* Filter chips above booking list */
+  .filter-chips {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .filter-chip {
+    background: var(--brand-cream);
+    border: 1.5px solid var(--border-soft);
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 12px; font-weight: 700;
+    font-family: inherit;
+    transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .filter-chip:hover:not(.active) { background: var(--brand-peach); color: var(--text); }
+  .filter-chip.active {
+    background: linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 100%);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 10px rgba(255, 122, 109, 0.3);
+  }
+  .filter-chip-count {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.35);
+    color: inherit;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    min-width: 20px; text-align: center;
+  }
+  .filter-chip:not(.active) .filter-chip-count {
+    background: #fff;
+    color: var(--muted);
+    border: 1px solid var(--border-soft);
+  }
+
   /* Booking row card */
   .booking-row {
     background: #fff;
@@ -635,6 +675,15 @@
             <button class="icon-btn" id="bookings-refresh" title="โหลดใหม่">↻</button>
           </div>
 
+          <div class="filter-chips" id="filter-chips">
+            <button type="button" class="filter-chip active" data-filter="all">
+              ทั้งหมด <span class="filter-chip-count" id="chip-count-all">0</span>
+            </button>
+            <button type="button" class="filter-chip" data-filter="submitted">
+              ⏳ รอตรวจสลิป <span class="filter-chip-count" id="chip-count-submitted">0</span>
+            </button>
+          </div>
+
           <div id="slot-stats" class="stats-row" style="display:none;">
             <div class="stat">
               <div class="stat-label">คนทั้งหมด</div>
@@ -756,6 +805,7 @@ const state = {
   slotStats: null,
   modalBooking: null,
   searchQuery: '',
+  bookingFilter: 'all',  // 'all' | 'submitted'
 };
 
 // ─── Auth / API ────────────────────────────────────────────
@@ -1141,19 +1191,45 @@ function renderBookings() {
     $('slot-stats').style.display = 'none';
   }
 
+  // Filter chip counts (always show against the unfiltered total)
+  const submittedCount = state.bookings.filter(b => b.payment_status === 'submitted').length;
+  $('chip-count-all').textContent = state.bookings.length;
+  $('chip-count-submitted').textContent = submittedCount;
+
+  // Apply filter
+  let filtered = state.bookings;
+  if (state.bookingFilter === 'submitted') {
+    filtered = filtered.filter(b => b.payment_status === 'submitted');
+  }
+
   // List
   const list = $('bookings-list');
   list.innerHTML = '';
-  if (!state.bookings.length) {
+  if (!filtered.length) {
     $('bookings-empty').style.display = 'block';
+    $('bookings-empty').querySelector('div:last-child').textContent =
+      state.bookingFilter === 'submitted'
+        ? 'ไม่มีสลิปรอตรวจในรายการนี้'
+        : 'ยังไม่มีการจอง';
     return;
   }
   $('bookings-empty').style.display = 'none';
 
-  for (const b of state.bookings) {
+  for (const b of filtered) {
     list.appendChild(renderBookingRow(b));
   }
 }
+
+// Filter chip click handlers
+document.querySelectorAll('.filter-chip').forEach(chip => {
+  chip.onclick = () => {
+    state.bookingFilter = chip.dataset.filter;
+    document.querySelectorAll('.filter-chip').forEach(c =>
+      c.classList.toggle('active', c === chip)
+    );
+    renderBookings();
+  };
+});
 
 function renderBookingRow(b) {
   const div = document.createElement('div');
