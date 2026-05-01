@@ -25,6 +25,7 @@ const BANK_INFO = {
 };
 
 const SLOT_CAPACITY = 100;
+const MAX_PEOPLE_PER_BOOKING = 5;
 const BOOKING_DATES = [
   '2026-05-15', '2026-05-16', '2026-05-17', '2026-05-18', '2026-05-19',
   '2026-05-20', '2026-05-21', '2026-05-22', '2026-05-23', '2026-05-24',
@@ -103,7 +104,8 @@ function slotUsage(date, time) {
   const row = db.prepare(`
     SELECT COALESCE(SUM(num_people), 0) AS total
     FROM bookings
-    WHERE booking_date = ? AND time_slot = ? AND payment_status != 'rejected'
+    WHERE booking_date = ? AND time_slot = ?
+      AND payment_status NOT IN ('rejected', 'cancelled')
   `).get(date, time);
   return row.total;
 }
@@ -121,14 +123,16 @@ function publicView(b) {
 function validateBooking(b) {
   const errors = {};
   const people = Number(b.num_people);
-  if (!Number.isInteger(people) || people < 1 || people > SLOT_CAPACITY) {
-    errors.num_people = 'จำนวนคนไม่ถูกต้อง';
+  if (!Number.isInteger(people) || people < 1 || people > MAX_PEOPLE_PER_BOOKING) {
+    errors.num_people = `จำนวนคนต้องอยู่ระหว่าง 1-${MAX_PEOPLE_PER_BOOKING}`;
   }
   if (!BOOKING_DATES.includes(b.booking_date)) errors.booking_date = 'วันที่ไม่ถูกต้อง';
   if (!TIME_SLOTS.includes(b.time_slot)) errors.time_slot = 'รอบเวลาไม่ถูกต้อง';
   if (!b.name || !String(b.name).trim()) errors.name = 'กรุณากรอกชื่อ-นามสกุล';
   if (!/^[0-9\-+\s()]{9,15}$/.test(String(b.phone || '').trim())) errors.phone = 'เบอร์โทรไม่ถูกต้อง';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(b.email || '').trim())) errors.email = 'รูปแบบอีเมลไม่ถูกต้อง';
+  // Email is optional — validate format only when provided
+  const email = String(b.email || '').trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'รูปแบบอีเมลไม่ถูกต้อง';
   return errors;
 }
 
@@ -274,7 +278,7 @@ app.get('/api/availability', (req, res) => {
   const rows = db.prepare(`
     SELECT booking_date, time_slot, COALESCE(SUM(num_people), 0) AS total
     FROM bookings
-    WHERE payment_status != 'rejected'
+    WHERE payment_status NOT IN ('rejected', 'cancelled')
     GROUP BY booking_date, time_slot
   `).all();
   const usage = new Map();
@@ -297,8 +301,22 @@ app.post('/api/booking', (req, res) => {
   if (Object.keys(errors).length) return res.status(400).json({ error: 'invalid', fields: errors });
 
   const { booking_date, time_slot, num_people, name, phone, email } = req.body;
+  const phoneClean = String(phone).trim();
 
   const tx = db.transaction(() => {
+    // One phone = one active booking. Cancelled bookings don't count
+    // (so the customer can re-book after admin cancels).
+    const dup = db.prepare(`
+      SELECT id, booking_date, time_slot, payment_status
+      FROM bookings WHERE phone = ? AND payment_status != 'cancelled'
+    `).get(phoneClean);
+    if (dup) {
+      const err = new Error('phone_exists');
+      err.code = 'PHONE_EXISTS';
+      err.existing = dup;
+      throw err;
+    }
+
     const used = slotUsage(booking_date, time_slot);
     if (used + num_people > SLOT_CAPACITY) {
       const err = new Error('full');
@@ -313,8 +331,8 @@ app.post('/api/booking', (req, res) => {
     `).run(
       code,
       String(name).trim(),
-      String(phone).trim(),
-      String(email).trim().toLowerCase(),
+      phoneClean,
+      String(email || '').trim().toLowerCase(),
       num_people,
       booking_date,
       time_slot,
@@ -326,12 +344,36 @@ app.post('/api/booking', (req, res) => {
     const row = tx();
     res.status(201).json(publicView(row));
   } catch (e) {
+    if (e.code === 'PHONE_EXISTS') {
+      return res.status(409).json({
+        error: 'phone_exists',
+        existing: e.existing,
+        message: 'เบอร์นี้เคยจองแล้ว — กรุณาเข้าตรวจสอบสถานะ',
+      });
+    }
     if (e.code === 'FULL') {
       return res.status(409).json({ error: 'full', remaining: e.remaining, message: 'รอบเวลานี้เต็มแล้ว' });
     }
     console.error(e);
     res.status(500).json({ error: 'server_error' });
   }
+});
+
+// Realtime check used by the booking form to flag a phone before submit
+app.get('/api/booking/check', (req, res) => {
+  const phone = String(req.query.phone || '').trim();
+  if (!/^[0-9\-+\s()]{9,15}$/.test(phone)) return res.json({ exists: false });
+  const row = db.prepare(`
+    SELECT booking_date, time_slot, payment_status
+    FROM bookings WHERE phone = ? AND payment_status != 'cancelled'
+  `).get(phone);
+  if (!row) return res.json({ exists: false });
+  res.json({
+    exists: true,
+    booking_date: row.booking_date,
+    time_slot: row.time_slot,
+    payment_status: row.payment_status,
+  });
 });
 
 // Lookup bookings by phone (used when returning users come back).
@@ -412,12 +454,12 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
     SELECT
       booking_date,
       time_slot,
-      COALESCE(SUM(CASE WHEN payment_status != 'rejected' THEN num_people ELSE 0 END), 0) AS total_people,
+      COALESCE(SUM(CASE WHEN payment_status NOT IN ('rejected', 'cancelled') THEN num_people ELSE 0 END), 0) AS total_people,
       COALESCE(SUM(CASE WHEN payment_status = 'verified' THEN num_people ELSE 0 END), 0) AS verified_people,
       COALESCE(SUM(CASE WHEN payment_status = 'submitted' THEN num_people ELSE 0 END), 0) AS pending_review_people,
       COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN num_people ELSE 0 END), 0) AS unpaid_people,
       COALESCE(SUM(CASE WHEN used = 1 THEN num_people ELSE 0 END), 0) AS used_people,
-      COUNT(CASE WHEN payment_status != 'rejected' THEN 1 END) AS bookings_count,
+      COUNT(CASE WHEN payment_status NOT IN ('rejected', 'cancelled') THEN 1 END) AS bookings_count,
       COUNT(CASE WHEN payment_status = 'submitted' THEN 1 END) AS pending_review_count
     FROM bookings
     GROUP BY booking_date, time_slot
@@ -451,7 +493,9 @@ app.get('/api/admin/bookings', requireAdmin, (req, res) => {
   const { date, time } = req.query;
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
 
-  const conds = [`payment_status != 'rejected'`];
+  // Admin sees every status (including rejected + cancelled) so they can
+  // audit and re-activate or follow up. Stats below still exclude inactive.
+  const conds = ['1=1'];
   const params = [];
 
   if (date) {
@@ -480,10 +524,11 @@ app.get('/api/admin/bookings', requireAdmin, (req, res) => {
 
   let stats = null;
   if (date && time) {
-    const total     = bookings.reduce((s, b) => s + b.num_people, 0);
-    const verified  = bookings.filter(b => b.payment_status === 'verified').reduce((s, b) => s + b.num_people, 0);
-    const submitted = bookings.filter(b => b.payment_status === 'submitted').reduce((s, b) => s + b.num_people, 0);
-    const usedCnt   = bookings.filter(b => b.used).reduce((s, b) => s + b.num_people, 0);
+    const active    = bookings.filter(b => !['rejected', 'cancelled'].includes(b.payment_status));
+    const total     = active.reduce((s, b) => s + b.num_people, 0);
+    const verified  = active.filter(b => b.payment_status === 'verified').reduce((s, b) => s + b.num_people, 0);
+    const submitted = active.filter(b => b.payment_status === 'submitted').reduce((s, b) => s + b.num_people, 0);
+    const usedCnt   = active.filter(b => b.used).reduce((s, b) => s + b.num_people, 0);
     stats = {
       capacity: SLOT_CAPACITY,
       total_people: total,
@@ -566,6 +611,22 @@ app.post('/api/admin/bookings/:id/reject', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM bookings WHERE id = ?').get(id));
 });
 
+// Admin cancellation — typically used when payment hasn't arrived in time.
+// Frees the slot capacity (same as reject) but reads as "cancelled" to the
+// customer so they aren't told their slip was bad.
+app.post('/api/admin/bookings/:id/cancel', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const reason = String(req.body?.reason || '').trim() || 'ยกเลิกโดยผู้ดูแล';
+  const row = db.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  db.prepare(`
+    UPDATE bookings
+    SET payment_status = 'cancelled', verified_at = NULL, rejected_reason = ?
+    WHERE id = ?
+  `).run(reason, id);
+  res.json(db.prepare('SELECT * FROM bookings WHERE id = ?').get(id));
+});
+
 // Reset back to pending/submitted (e.g. admin clicked verify by mistake)
 app.post('/api/admin/bookings/:id/reset', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
@@ -607,7 +668,7 @@ app.post('/api/admin/bookings/:id/transfer', requireAdmin, (req, res) => {
     const destUsage = db.prepare(`
       SELECT COALESCE(SUM(num_people), 0) AS total
       FROM bookings
-      WHERE booking_date = ? AND time_slot = ? AND payment_status != 'rejected' AND id != ?
+      WHERE booking_date = ? AND time_slot = ? AND payment_status NOT IN ('rejected', 'cancelled') AND id != ?
     `).get(newDate, newTime, id);
     if (destUsage.total + booking.num_people > SLOT_CAPACITY) {
       const err = new Error('full');

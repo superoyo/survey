@@ -314,6 +314,7 @@
   .booking-row:hover { box-shadow: 0 6px 18px rgba(255,122,109,0.12); border-color: var(--border); }
   .booking-row.used { background: #F0FDF4; border-color: #BBF7D0; }
   .booking-row.rejected { background: #FEF2F2; opacity: 0.7; }
+  .booking-row.cancelled { background: #F9FAFB; opacity: 0.65; border-style: dashed; }
   .booking-row-head {
     display: flex; justify-content: space-between; align-items: flex-start;
     gap: 10px; margin-bottom: 6px;
@@ -352,6 +353,7 @@
   .badge.verified    { background: #D1FAE5; color: #065F46; }
   .badge.rejected    { background: #FEE2E2; color: #991B1B; }
   .badge.used        { background: #E0E7FF; color: #3730A3; margin-left: 6px; }
+  .badge.cancelled   { background: #F3F4F6; color: #4B5563; }
 
   .empty-hint {
     color: var(--muted); font-size: 12px;
@@ -648,7 +650,8 @@ const STATUS_LABEL = {
   pending:   'รอชำระ',
   submitted: 'รอตรวจสลิป',
   verified:  'ยืนยันแล้ว',
-  rejected:  'ปฏิเสธ',
+  rejected:  'ปฏิเสธสลิป',
+  cancelled: 'ยกเลิกการจอง',
 };
 
 const $ = id => document.getElementById(id);
@@ -957,6 +960,7 @@ function renderBookingRow(b) {
   const div = document.createElement('div');
   div.className = 'booking-row';
   if (b.payment_status === 'rejected') div.classList.add('rejected');
+  if (b.payment_status === 'cancelled') div.classList.add('cancelled');
   if (b.used) div.classList.add('used');
 
   const statusBadge = `<span class="badge ${b.payment_status}">${STATUS_LABEL[b.payment_status]}</span>`;
@@ -978,8 +982,12 @@ function renderBookingRow(b) {
       actions.push(`<button class="btn btn-info" data-action="transfer">🔄 ย้ายรอบ</button>`);
     }
   }
-  if (b.payment_status === 'verified' || b.payment_status === 'rejected') {
+  if (b.payment_status === 'verified' || b.payment_status === 'rejected' || b.payment_status === 'cancelled') {
     actions.push(`<button class="btn btn-ghost" data-action="reset">รีเซ็ต</button>`);
+  }
+  // Cancel — for any non-cancelled, non-used booking. Typical use: payment hasn't arrived in time.
+  if (b.payment_status !== 'cancelled' && !b.used) {
+    actions.push(`<button class="btn btn-danger" data-action="cancel">🚫 ยกเลิก</button>`);
   }
   if (b.payment_status === 'pending' && !b.has_slip) {
     actions.unshift(`<span style="font-size:11px; color:var(--muted); padding: 6px 10px;">ยังไม่ส่งสลิป</span>`);
@@ -1052,7 +1060,17 @@ $('bookings-refresh').onclick = async () => {
 // ─── Booking actions ──────────────────────────────────────
 async function handleAction(action, booking, btn) {
   if (action === 'view-slip') return openSlipModal(booking);
-  if (action === 'transfer') return openTransferModal(booking);
+  if (action === 'transfer')  return openTransferModal(booking);
+  if (action === 'cancel') {
+    const reason = prompt('เหตุผลในการยกเลิก (ผู้จองจะเห็นข้อความนี้):', 'ไม่ได้รับการชำระเงินภายในเวลาที่กำหนด');
+    if (reason === null) return;
+    btn.disabled = true;
+    try {
+      await api('POST', `/api/admin/bookings/${booking.id}/cancel`, { reason });
+      await refreshAll();
+    } catch { alert('เกิดข้อผิดพลาด'); btn.disabled = false; }
+    return;
+  }
   if (action === 'quick-verify' && !confirm('ยืนยันการชำระเงินและออกตั๋ว?')) return;
   if (action === 'reset' && !confirm('รีเซ็ตสถานะกลับเป็นรอตรวจสอบ?')) return;
 

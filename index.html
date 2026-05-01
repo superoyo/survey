@@ -227,6 +227,20 @@
   .field input:focus { outline: none; border-color: var(--brand-red); box-shadow: 0 0 0 4px rgba(255, 122, 109, 0.12); }
   .field .err { color: var(--danger); font-size: 12px; margin-top: 4px; min-height: 14px; font-weight: 600; }
 
+  /* Payment deadline notice */
+  .pay-deadline {
+    background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+    border: 1.5px solid var(--brand-gold-deep);
+    border-radius: 12px;
+    padding: 11px 14px;
+    font-size: 13px;
+    color: var(--brand-gold-dark);
+    margin-bottom: 14px;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .pay-deadline b { color: var(--brand-red-dark); }
+
   /* Payment box — soft butter yellow card */
   .pay-box {
     background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
@@ -321,6 +335,11 @@
     background: linear-gradient(135deg, #E0E7FF 0%, #C7D2FE 100%);
     border: 1.5px solid #818CF8;
     color: #3730A3;
+  }
+  .status-cancelled {
+    background: linear-gradient(135deg, #F3F4F6 0%, #D1D5DB 100%);
+    border: 1.5px solid #9CA3AF;
+    color: #1F2937;
   }
   .status-extra {
     margin-top: 14px;
@@ -419,6 +438,7 @@
   .badge.verified    { background: #D1FAE5; color: #065F46; }
   .badge.rejected    { background: #FEE2E2; color: #991B1B; }
   .badge.used        { background: #E0E7FF; color: #3730A3; }
+  .badge.cancelled   { background: #F3F4F6; color: #4B5563; }
 
   /* Tagline strip beneath KV */
   .tagline-strip {
@@ -494,7 +514,7 @@
       <!-- Step 1: People -->
       <div class="step active" data-step="1">
         <div class="step-title">เลือกจำนวนคน</div>
-        <div class="step-hint">รอบละไม่เกิน 100 คน</div>
+        <div class="step-hint">1 การจอง สูงสุด 5 ใบ · 1 เบอร์โทรจองได้ครั้งเดียว</div>
         <div class="people-counter">
           <button class="counter-btn" id="dec-people">−</button>
           <div class="counter-value" id="people-value">2</div>
@@ -542,10 +562,11 @@
             <label for="f-phone">เบอร์โทรศัพท์</label>
             <input type="tel" id="f-phone" inputmode="tel" autocomplete="tel" placeholder="0xx-xxx-xxxx" required />
             <div class="err" data-err="phone"></div>
+            <div id="phone-warning" class="alert" style="display:none; margin-top:6px;"></div>
           </div>
           <div class="field">
-            <label for="f-email">อีเมล</label>
-            <input type="email" id="f-email" autocomplete="email" placeholder="you@example.com" required />
+            <label for="f-email">อีเมล <span style="color:var(--muted); font-weight:500;">(ไม่บังคับ)</span></label>
+            <input type="email" id="f-email" autocomplete="email" placeholder="you@example.com" />
             <div class="err" data-err="email"></div>
           </div>
           <div class="actions">
@@ -559,6 +580,8 @@
       <div class="step" data-step="5">
         <div class="step-title">ชำระเงิน</div>
         <div class="step-hint">โอนเงินตามจำนวนด้านล่าง แล้วแนบสลิป (จะแนบทีหลังก็ได้)</div>
+
+        <div class="pay-deadline">⏰ <b>กรุณาโอนภายใน 1 ชั่วโมง</b> — หากเกินเวลา ทางร้านสงวนสิทธิ์ในการยกเลิกการจอง</div>
 
         <div class="pay-box">
           <div class="pay-bank" id="pay-bank">ธนาคาร...</div>
@@ -671,6 +694,7 @@ const STATUS_LABEL = {
   submitted: { label: 'รอตรวจสอบสลิป',      icon: '⏳', cls: 'status-submitted', badge: 'submitted' },
   verified:  { label: 'ยืนยันแล้ว',           icon: '✅', cls: 'status-verified',  badge: 'verified'  },
   rejected:  { label: 'ปฏิเสธการชำระเงิน',  icon: '❌', cls: 'status-rejected',  badge: 'rejected'  },
+  cancelled: { label: 'ยกเลิกการจอง',        icon: '🚫', cls: 'status-cancelled', badge: 'cancelled' },
   used:      { label: 'ใช้สิทธิ์แล้ว',         icon: '🎉', cls: 'status-used',      badge: 'used'      },
 };
 
@@ -691,6 +715,8 @@ const state = {
   availability: null,
   booking: null,
   slipFile: null,
+  phoneTakenBy: null,   // existing booking found by realtime check
+  phoneCheckTimer: null,
   // lookup
   lkPhone: null,
   lkBookings: [],
@@ -751,14 +777,15 @@ function setStep(n) {
 }
 
 // ─── Step 1: people ────────────────────────────────────────
+const MAX_PEOPLE = 5;
 function updatePeople() {
   $('people-value').textContent = state.people;
   $('hint-people').textContent = state.people;
   $('dec-people').disabled = state.people <= 1;
-  $('inc-people').disabled = state.people >= 100;
+  $('inc-people').disabled = state.people >= MAX_PEOPLE;
 }
-$('inc-people').onclick = () => { if (state.people < 100) { state.people++; updatePeople(); } };
-$('dec-people').onclick = () => { if (state.people > 1)   { state.people--; updatePeople(); } };
+$('inc-people').onclick = () => { if (state.people < MAX_PEOPLE) { state.people++; updatePeople(); } };
+$('dec-people').onclick = () => { if (state.people > 1)          { state.people--; updatePeople(); } };
 $('next-1').onclick = async () => {
   await loadAvailability();
   renderDates();
@@ -826,6 +853,45 @@ function setError(field, msg) {
   if (el) el.textContent = msg;
 }
 
+// Realtime phone check — flags an existing booking before the user submits
+function clearPhoneWarning() {
+  state.phoneTakenBy = null;
+  $('phone-warning').style.display = 'none';
+  $('phone-warning').className = 'alert';
+}
+function showPhoneWarning(data, phone) {
+  state.phoneTakenBy = phone;
+  const w = $('phone-warning');
+  const s = STATUS_LABEL[data.payment_status] || STATUS_LABEL.pending;
+  w.className = 'alert error';
+  w.style.display = 'block';
+  w.innerHTML = `
+    เบอร์นี้เคยจองแล้ว · ${fmtDateLong(data.booking_date)} · ${fmtSlot(data.time_slot)} · ${s.label}
+    <a href="#" id="go-lookup-from-warning" style="color:#7F1D1D; font-weight:800; text-decoration:underline; margin-left:6px;">→ ตรวจสอบสถานะ</a>
+  `;
+  $('go-lookup-from-warning').onclick = (e) => {
+    e.preventDefault();
+    document.querySelector('.tab[data-mode="lookup"]').click();
+    $('lk-phone').value = phone;
+    $('lookup-form').requestSubmit();
+  };
+}
+$('f-phone').addEventListener('input', (e) => {
+  clearTimeout(state.phoneCheckTimer);
+  const phone = e.target.value.trim();
+  // Same value as last warning? leave it. Otherwise clear immediately.
+  if (state.phoneTakenBy && state.phoneTakenBy !== phone) clearPhoneWarning();
+  if (!/^[0-9\-+\s()]{9,15}$/.test(phone)) return;
+  state.phoneCheckTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/booking/check?phone=${encodeURIComponent(phone)}`);
+      const data = await res.json();
+      if (data.exists) showPhoneWarning(data, phone);
+      else clearPhoneWarning();
+    } catch { /* network blip — ignore, server-side check is authoritative */ }
+  }, 350);
+});
+
 $('booking-form').onsubmit = async (e) => {
   e.preventDefault();
   clearErrors();
@@ -838,7 +904,9 @@ $('booking-form').onsubmit = async (e) => {
   let ok = true;
   if (!name) { setError('name', 'กรุณากรอกชื่อ-นามสกุล'); ok = false; }
   if (!/^[0-9\-+\s()]{9,15}$/.test(phone)) { setError('phone', 'เบอร์โทรไม่ถูกต้อง'); ok = false; }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('email', 'รูปแบบอีเมลไม่ถูกต้อง'); ok = false; }
+  // Email is optional — only validate when something is typed
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('email', 'รูปแบบอีเมลไม่ถูกต้อง'); ok = false; }
+  if (state.phoneTakenBy) { setError('phone', 'เบอร์นี้เคยจองแล้ว — กรุณาเข้าตรวจสอบสถานะ'); ok = false; }
   if (!ok) return;
 
   const btn = $('submit-booking');
@@ -858,7 +926,10 @@ $('booking-form').onsubmit = async (e) => {
     const data = await res.json();
     if (!res.ok) {
       if (data.fields) for (const [k, v] of Object.entries(data.fields)) setError(k, v);
-      else if (data.error === 'full') {
+      else if (data.error === 'phone_exists') {
+        if (data.existing) showPhoneWarning(data.existing, phone);
+        showAlert(data.message || 'เบอร์นี้เคยจองแล้ว — กรุณาเข้าตรวจสอบสถานะ');
+      } else if (data.error === 'full') {
         showAlert(`ขออภัย รอบนี้เต็มแล้ว เหลือเพียง ${data.remaining} ที่นั่ง — กรุณาเลือกรอบใหม่`);
         await loadAvailability();
       } else showAlert(data.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
@@ -942,10 +1013,11 @@ function renderStatusBlock(b, container) {
   const s = STATUS_LABEL[eff] || STATUS_LABEL.pending;
 
   let desc = '';
-  if (eff === 'pending')   desc = 'กรุณาโอนเงินตามรายละเอียดด้านล่าง แล้วกลับมาแนบสลิป';
+  if (eff === 'pending')   desc = 'กรุณาโอนเงินภายใน 1 ชั่วโมง แล้วกลับมาแนบสลิป';
   if (eff === 'submitted') desc = 'ทางร้านได้รับสลิปแล้ว กรุณารอการตรวจสอบ (ปกติภายใน 24 ชม.)';
   if (eff === 'verified')  desc = 'การชำระเงินได้รับการยืนยัน — ตั๋วของคุณพร้อมใช้งาน';
   if (eff === 'rejected')  desc = 'แอดมินตรวจสอบสลิปแล้วไม่ผ่าน — กรุณาแนบสลิปใหม่ตามเหตุผลด้านล่าง';
+  if (eff === 'cancelled') desc = 'การจองนี้ถูกยกเลิก — สามารถจองใหม่ได้';
   if (eff === 'used') {
     const when = b.used_at ? new Date(b.used_at + 'Z').toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' }) : '';
     desc = `ขอบคุณที่มาใช้บริการครับ${when ? ` · ${when}` : ''}`;
@@ -972,12 +1044,13 @@ function renderStatusBlock(b, container) {
       </div>`);
   }
 
-  // Rejection reason
-  if (b.payment_status === 'rejected') {
+  // Rejection or cancellation reason — same field, different label
+  if (b.payment_status === 'rejected' || b.payment_status === 'cancelled') {
+    const isCancel = b.payment_status === 'cancelled';
     parts.push(`
       <div class="status-extra reject">
-        <div class="lbl">เหตุผลที่แอดมินปฏิเสธ</div>
-        <div class="val">${escapeHtml(b.rejected_reason || 'สลิปไม่ผ่านการตรวจสอบ')}</div>
+        <div class="lbl">${isCancel ? 'เหตุผลในการยกเลิก' : 'เหตุผลที่แอดมินปฏิเสธ'}</div>
+        <div class="val">${escapeHtml(b.rejected_reason || (isCancel ? 'ยกเลิกโดยผู้ดูแล' : 'สลิปไม่ผ่านการตรวจสอบ'))}</div>
       </div>`);
   }
 
@@ -1090,9 +1163,9 @@ function renderLkDetail() {
   renderStatusBlock(b, $('lk-detail-status'));
   renderSummaryRows(b, $('lk-detail-summary'));
 
-  // Hide pay/upload section once verified or already used
+  // Hide pay/upload section once verified, used, or cancelled
   const paySection = $('lk-pay-section');
-  if (b.payment_status === 'verified' || b.used) {
+  if (b.payment_status === 'verified' || b.payment_status === 'cancelled' || b.used) {
     paySection.style.display = 'none';
   } else {
     paySection.style.display = 'block';
