@@ -1247,6 +1247,15 @@ function elapsedMinutes(b) {
   if (isNaN(created)) return null;
   return Math.floor((Date.now() - created) / 60000);
 }
+// Booking creation time, short form: "14:35" if today, "30/4 14:35" otherwise
+function fmtBookingCreatedAt(b) {
+  if (!b.created_at) return '';
+  const d = new Date(b.created_at + 'Z');
+  if (isNaN(d)) return '';
+  const t = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? t : `${d.getDate()}/${d.getMonth() + 1} ${t}`;
+}
 
 // Filter chip click handlers
 document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -1288,17 +1297,17 @@ function renderBookingRow(b) {
   if (b.payment_status === 'verified' || b.payment_status === 'rejected' || b.payment_status === 'cancelled') {
     actions.push(`<button class="btn btn-ghost" data-action="reset">รีเซ็ต</button>`);
   }
-  // Cancel — for any non-cancelled, non-used booking. Pending bookings get a
-  // live elapsed-minutes badge so the operator can spot ones past the
-  // 1-hour grace window at a glance.
+  // Cancel — for any non-cancelled, non-used booking. Pending bookings get
+  // "ยกเลิก จองเมื่อ HH:MM (เกิน X นาที)" so the operator can read the
+  // booking time and time-since-booked at a glance.
   if (b.payment_status !== 'cancelled' && !b.used) {
     let cancelLabel = '🚫 ยกเลิก';
     if (b.payment_status === 'pending') {
       const mins = elapsedMinutes(b);
-      if (mins !== null) {
-        cancelLabel = mins >= 60
-          ? `🚫 ยกเลิก · เกิน ${mins} นาที`
-          : `🚫 ยกเลิก · ${mins} นาที`;
+      const when = fmtBookingCreatedAt(b);
+      if (mins !== null && when) {
+        const inside = mins >= 60 ? `เกิน ${mins} นาที` : `${mins} นาที`;
+        cancelLabel = `🚫 ยกเลิก จองเมื่อ ${when} (${inside})`;
       }
     }
     actions.push(`<button class="btn btn-danger" data-action="cancel">${cancelLabel}</button>`);
