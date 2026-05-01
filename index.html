@@ -317,6 +317,30 @@
     border: 1.5px solid #F87171;
     color: #991B1B;
   }
+  .status-used {
+    background: linear-gradient(135deg, #E0E7FF 0%, #C7D2FE 100%);
+    border: 1.5px solid #818CF8;
+    color: #3730A3;
+  }
+  .status-extra {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.65);
+    border-radius: 12px;
+    font-size: 13px;
+    text-align: left;
+  }
+  .status-extra .lbl {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .status-extra.transfer { border: 1.5px dashed #6366F1; }
+  .status-extra.transfer .lbl { color: #4F46E5; }
+  .status-extra.transfer .val { color: #3730A3; }
+  .status-extra.reject   { border: 1.5px dashed #DC2626; }
+  .status-extra.reject .lbl { color: #B91C1C; }
+  .status-extra.reject .val { color: #7F1D1D; font-size: 14px; }
 
   .ticket-code {
     font-family: ui-monospace, "SF Mono", monospace;
@@ -647,7 +671,15 @@ const STATUS_LABEL = {
   submitted: { label: 'รอตรวจสอบสลิป',      icon: '⏳', cls: 'status-submitted', badge: 'submitted' },
   verified:  { label: 'ยืนยันแล้ว',           icon: '✅', cls: 'status-verified',  badge: 'verified'  },
   rejected:  { label: 'ปฏิเสธการชำระเงิน',  icon: '❌', cls: 'status-rejected',  badge: 'rejected'  },
+  used:      { label: 'ใช้สิทธิ์แล้ว',         icon: '🎉', cls: 'status-used',      badge: 'used'      },
 };
+
+// "Used" overrides the payment status for display purposes once the
+// customer has actually checked in at the event.
+function effectiveStatus(b) {
+  if (b.used) return 'used';
+  return b.payment_status;
+}
 
 const state = {
   mode: 'new',
@@ -906,34 +938,55 @@ $('skip-slip').onclick = () => {
 
 // ─── Step 6: confirmation/summary ──────────────────────────
 function renderStatusBlock(b, container) {
-  const s = STATUS_LABEL[b.payment_status] || STATUS_LABEL.pending;
-  let extra = '';
-  if (b.payment_status === 'verified' && b.code) {
-    extra = `
+  const eff = effectiveStatus(b);
+  const s = STATUS_LABEL[eff] || STATUS_LABEL.pending;
+
+  let desc = '';
+  if (eff === 'pending')   desc = 'กรุณาโอนเงินตามรายละเอียดด้านล่าง แล้วกลับมาแนบสลิป';
+  if (eff === 'submitted') desc = 'ทางร้านได้รับสลิปแล้ว กรุณารอการตรวจสอบ (ปกติภายใน 24 ชม.)';
+  if (eff === 'verified')  desc = 'การชำระเงินได้รับการยืนยัน — ตั๋วของคุณพร้อมใช้งาน';
+  if (eff === 'rejected')  desc = 'แอดมินตรวจสอบสลิปแล้วไม่ผ่าน — กรุณาแนบสลิปใหม่ตามเหตุผลด้านล่าง';
+  if (eff === 'used') {
+    const when = b.used_at ? new Date(b.used_at + 'Z').toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' }) : '';
+    desc = `ขอบคุณที่มาใช้บริการครับ${when ? ` · ${when}` : ''}`;
+  }
+
+  const parts = [];
+
+  // Ticket code (verified, not yet used)
+  if (eff === 'verified' && b.code) {
+    parts.push(`
       <div style="margin-top:10px; text-align:center;">
         <div style="font-size:12px;">รหัสตั๋ว 6 หลัก</div>
         <div class="ticket-code">${escapeHtml(b.code)}</div>
         <div style="font-size:12px;">นำรหัสนี้มาแสดงในวันใช้สิทธิ์</div>
-      </div>`;
-  } else if (b.payment_status === 'rejected') {
-    extra = `
-      <div style="margin-top:14px; padding:12px 14px; background:rgba(255,255,255,0.7); border-radius:12px; border:1px dashed #DC2626;">
-        <div style="font-size:11px; font-weight:700; color:#7F1D1D; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">เหตุผลที่แอดมินปฏิเสธ</div>
-        <div style="font-size:14px; color:#7F1D1D;">${escapeHtml(b.rejected_reason || 'สลิปไม่ผ่านการตรวจสอบ')}</div>
-      </div>`;
+      </div>`);
   }
-  let desc = '';
-  if (b.payment_status === 'pending')   desc = 'กรุณาโอนเงินตามรายละเอียดด้านล่าง แล้วกลับมาแนบสลิป';
-  if (b.payment_status === 'submitted') desc = 'ทางร้านได้รับสลิปแล้ว กรุณารอการตรวจสอบ (ปกติภายใน 24 ชม.)';
-  if (b.payment_status === 'verified')  desc = 'การชำระเงินได้รับการยืนยัน — ตั๋วของคุณพร้อมใช้งาน';
-  if (b.payment_status === 'rejected')  desc = 'แอดมินตรวจสอบสลิปแล้วไม่ผ่าน — กรุณาแนบสลิปใหม่ตามเหตุผลด้านล่าง';
+
+  // Transfer notice (independent of status — show whenever original_date is set)
+  if (b.original_date) {
+    parts.push(`
+      <div class="status-extra transfer">
+        <div class="lbl">📍 ย้ายรอบมาจาก</div>
+        <div class="val">${fmtDateLong(b.original_date)} · ${fmtSlot(b.original_time)}</div>
+      </div>`);
+  }
+
+  // Rejection reason
+  if (b.payment_status === 'rejected') {
+    parts.push(`
+      <div class="status-extra reject">
+        <div class="lbl">เหตุผลที่แอดมินปฏิเสธ</div>
+        <div class="val">${escapeHtml(b.rejected_reason || 'สลิปไม่ผ่านการตรวจสอบ')}</div>
+      </div>`);
+  }
 
   container.innerHTML = `
     <div class="status-card ${s.cls}">
       <div class="icon">${s.icon}</div>
       <div class="title">${s.label}</div>
       <div class="desc">${desc}</div>
-      ${extra}
+      ${parts.join('')}
     </div>`;
 }
 
@@ -1003,7 +1056,11 @@ function renderLkList() {
   const root = $('lk-bookings');
   root.innerHTML = '';
   for (const b of state.lkBookings) {
-    const s = STATUS_LABEL[b.payment_status] || STATUS_LABEL.pending;
+    const eff = effectiveStatus(b);
+    const s = STATUS_LABEL[eff] || STATUS_LABEL.pending;
+    const transferTag = b.original_date
+      ? `<span class="badge" style="background:#E0E7FF; color:#3730A3;">↪ ย้ายรอบ</span>`
+      : '';
     const card = document.createElement('div');
     card.className = 'booking-card';
     card.style.cursor = 'pointer';
@@ -1013,7 +1070,10 @@ function renderLkList() {
           <div class="booking-card-title">${fmtDateLong(b.booking_date)}</div>
           <div class="booking-card-meta">${fmtSlot(b.time_slot)} · ${b.num_people} คน</div>
         </div>
-        <span class="badge ${s.badge}">${s.label}</span>
+        <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
+          <span class="badge ${s.badge}">${s.label}</span>
+          ${transferTag}
+        </div>
       </div>
       <div style="font-size:12px; color:var(--muted);">${escapeHtml(b.name)}</div>
     `;
@@ -1030,9 +1090,9 @@ function renderLkDetail() {
   renderStatusBlock(b, $('lk-detail-status'));
   renderSummaryRows(b, $('lk-detail-summary'));
 
-  // Show pay/upload section if not verified
+  // Hide pay/upload section once verified or already used
   const paySection = $('lk-pay-section');
-  if (b.payment_status === 'verified') {
+  if (b.payment_status === 'verified' || b.used) {
     paySection.style.display = 'none';
   } else {
     paySection.style.display = 'block';

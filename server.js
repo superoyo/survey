@@ -51,6 +51,9 @@ db.exec(`
     slip_uploaded_at TEXT,
     verified_at     TEXT,
     rejected_reason TEXT,
+    original_date   TEXT,
+    original_time   TEXT,
+    transferred_at  TEXT,
     used            INTEGER NOT NULL DEFAULT 0,
     used_at         TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -69,6 +72,9 @@ db.exec(`
     ['slip_uploaded_at', `TEXT`],
     ['verified_at', `TEXT`],
     ['rejected_reason', `TEXT`],
+    ['original_date', `TEXT`],
+    ['original_time', `TEXT`],
+    ['transferred_at', `TEXT`],
   ];
   for (const [name, def] of adds) {
     if (!cols.includes(name)) db.exec(`ALTER TABLE bookings ADD COLUMN ${name} ${def}`);
@@ -572,6 +578,71 @@ app.post('/api/admin/bookings/:id/reset', requireAdmin, (req, res) => {
     WHERE id = ?
   `).run(newStatus, id);
   res.json(db.prepare('SELECT * FROM bookings WHERE id = ?').get(id));
+});
+
+// Move a verified booking to a different (date, time). Source slot capacity
+// is freed; destination is checked. Original date/time captured on the
+// first transfer so the customer can see where they came from.
+app.post('/api/admin/bookings/:id/transfer', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const { date: newDate, time: newTime } = req.body || {};
+  if (!BOOKING_DATES.includes(newDate)) return res.status(400).json({ error: 'invalid_date' });
+  if (!TIME_SLOTS.includes(newTime))    return res.status(400).json({ error: 'invalid_time' });
+
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+  if (!booking) return res.status(404).json({ error: 'not_found' });
+
+  if (booking.payment_status !== 'verified') {
+    return res.status(409).json({ error: 'not_verified', message: 'ย้ายได้เฉพาะการจองที่ยืนยันชำระเงินแล้ว' });
+  }
+  if (booking.used) {
+    return res.status(409).json({ error: 'already_used', message: 'การจองนี้ใช้สิทธิ์ไปแล้ว' });
+  }
+  if (booking.booking_date === newDate && booking.time_slot === newTime) {
+    return res.status(409).json({ error: 'same_slot', message: 'รอบใหม่เหมือนรอบเดิม' });
+  }
+
+  const tx = db.transaction(() => {
+    // Capacity at destination — exclude this booking so a same-slot reflow doesn't double count
+    const destUsage = db.prepare(`
+      SELECT COALESCE(SUM(num_people), 0) AS total
+      FROM bookings
+      WHERE booking_date = ? AND time_slot = ? AND payment_status != 'rejected' AND id != ?
+    `).get(newDate, newTime, id);
+    if (destUsage.total + booking.num_people > SLOT_CAPACITY) {
+      const err = new Error('full');
+      err.code = 'FULL';
+      err.remaining = SLOT_CAPACITY - destUsage.total;
+      throw err;
+    }
+    // Capture original on the first transfer only — subsequent moves keep the
+    // earliest position so the customer always sees where they started.
+    if (booking.original_date) {
+      db.prepare(`
+        UPDATE bookings
+        SET booking_date = ?, time_slot = ?, transferred_at = datetime('now')
+        WHERE id = ?
+      `).run(newDate, newTime, id);
+    } else {
+      db.prepare(`
+        UPDATE bookings
+        SET booking_date = ?, time_slot = ?, transferred_at = datetime('now'),
+            original_date = ?, original_time = ?
+        WHERE id = ?
+      `).run(newDate, newTime, booking.booking_date, booking.time_slot, id);
+    }
+    return db.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+  });
+
+  try {
+    res.json(tx());
+  } catch (e) {
+    if (e.code === 'FULL') {
+      return res.status(409).json({ error: 'slot_full', remaining: e.remaining, message: `รอบใหม่เต็ม เหลือเพียง ${e.remaining} ที่` });
+    }
+    console.error(e);
+    res.status(500).json({ error: 'server_error' });
+  }
 });
 
 app.post('/api/admin/bookings/:id/use', requireAdmin, (req, res) => {

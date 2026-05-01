@@ -364,6 +364,54 @@
   }
   .empty-state .em-icon { font-size: 40px; margin-bottom: 8px; opacity: 0.6; }
 
+  /* ─── Transfer slot picker ─────────────────────────────── */
+  .transfer-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .transfer-cell {
+    border: 1.5px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 8px 4px;
+    text-align: center;
+    cursor: pointer;
+    background: #fff;
+    transition: all 0.15s;
+    font-size: 12px;
+  }
+  .transfer-cell:hover:not(.disabled):not(.current) {
+    border-color: var(--brand-red);
+    transform: translateY(-1px);
+  }
+  .transfer-cell.selected {
+    background: linear-gradient(135deg, #FFE4D6 0%, #FED7C5 100%);
+    border-color: var(--brand-red);
+    box-shadow: 0 4px 10px rgba(255, 122, 109, 0.2);
+  }
+  .transfer-cell.current {
+    background: var(--brand-cream);
+    border-color: var(--brand-gold-deep);
+    cursor: not-allowed;
+  }
+  .transfer-cell.disabled { opacity: 0.35; cursor: not-allowed; background: #FAF5E8; }
+  .transfer-cell-num { font-weight: 800; font-size: 16px; color: var(--text); line-height: 1; }
+  .transfer-cell-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .transfer-section-label {
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 14px 0 8px;
+  }
+  .transfer-info-line {
+    background: var(--brand-cream);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .transfer-info-line b { color: var(--brand-red-dark); }
+
   /* ─── Slip modal ───────────────────────────────────────── */
   .modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.55);
@@ -548,6 +596,27 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transfer slot modal -->
+  <div class="modal-overlay" id="transfer-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">ย้ายรอบ</div>
+        <button class="modal-close" id="transfer-modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="transfer-info-line" id="transfer-info"></div>
+        <div class="transfer-section-label">เลือกวันใหม่</div>
+        <div class="transfer-grid" id="transfer-dates"></div>
+        <div class="transfer-section-label">เลือกรอบใหม่</div>
+        <div class="transfer-grid" id="transfer-times"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="transfer-cancel">ยกเลิก</button>
+        <button class="btn btn-accent" id="transfer-confirm" disabled>✓ ยืนยันย้ายรอบ</button>
       </div>
     </div>
   </div>
@@ -906,6 +975,7 @@ function renderBookingRow(b) {
       actions.push(`<button class="btn btn-ghost" data-action="unuse">ยกเลิกใช้สิทธิ์</button>`);
     } else {
       actions.push(`<button class="btn btn-accent" data-action="use">ใช้สิทธิ์</button>`);
+      actions.push(`<button class="btn btn-info" data-action="transfer">🔄 ย้ายรอบ</button>`);
     }
   }
   if (b.payment_status === 'verified' || b.payment_status === 'rejected') {
@@ -914,6 +984,10 @@ function renderBookingRow(b) {
   if (b.payment_status === 'pending' && !b.has_slip) {
     actions.unshift(`<span style="font-size:11px; color:var(--muted); padding: 6px 10px;">ยังไม่ส่งสลิป</span>`);
   }
+
+  const transferLine = b.original_date
+    ? `<div style="font-size:11px; color:#3730A3; margin-top:6px;">↪ ย้ายมาจาก ${fmtDateShort(b.original_date)} · ${fmtSlot(b.original_time)}</div>`
+    : '';
 
   div.innerHTML = `
     <div class="booking-row-head">
@@ -929,6 +1003,7 @@ function renderBookingRow(b) {
       <span class="booking-row-when">📅 ${fmtDateShort(b.booking_date)} · ⏰ ${fmtSlot(b.time_slot)} · ${b.num_people} คน</span>
       ${b.code ? `<span class="booking-row-code">${escapeHtml(b.code)}</span>` : ''}
     </div>
+    ${transferLine}
     <div class="booking-row-actions">${actions.join('')}</div>
   `;
 
@@ -977,6 +1052,7 @@ $('bookings-refresh').onclick = async () => {
 // ─── Booking actions ──────────────────────────────────────
 async function handleAction(action, booking, btn) {
   if (action === 'view-slip') return openSlipModal(booking);
+  if (action === 'transfer') return openTransferModal(booking);
   if (action === 'quick-verify' && !confirm('ยืนยันการชำระเงินและออกตั๋ว?')) return;
   if (action === 'reset' && !confirm('รีเซ็ตสถานะกลับเป็นรอตรวจสอบ?')) return;
 
@@ -984,15 +1060,136 @@ async function handleAction(action, booking, btn) {
   btn.disabled = true;
   try {
     await api('POST', `/api/admin/bookings/${booking.id}/${map[action]}`);
-    await loadOverview();
-    renderDays();
-    if (state.selectedDate) renderTimes();
-    await loadBookings();
+    await refreshAll();
   } catch {
     alert('เกิดข้อผิดพลาด');
     btn.disabled = false;
   }
 }
+
+async function refreshAll() {
+  await loadOverview();
+  renderDays();
+  if (state.selectedDate) renderTimes();
+  await loadBookings();
+}
+
+// ─── Transfer slot modal ──────────────────────────────────
+function openTransferModal(b) {
+  state.transferBooking = b;
+  state.transferDate = b.booking_date;
+  state.transferTime = null;
+  $('transfer-info').innerHTML = `
+    <div><b>${escapeHtml(b.name)}</b> · ${b.num_people} คน · รหัส ${escapeHtml(b.code || '-')}</div>
+    <div style="color:var(--muted); font-size:12px; margin-top:2px;">รอบเดิม: ${fmtDateLong(b.booking_date)} · ${fmtSlot(b.time_slot)}</div>
+  `;
+  renderTransferDates();
+  renderTransferTimes();
+  $('transfer-confirm').disabled = true;
+  $('transfer-modal').classList.add('active');
+}
+
+function closeTransferModal() {
+  $('transfer-modal').classList.remove('active');
+  state.transferBooking = null;
+  state.transferDate = null;
+  state.transferTime = null;
+}
+
+function renderTransferDates() {
+  const root = $('transfer-dates');
+  root.innerHTML = '';
+  const booking = state.transferBooking;
+  for (const date of state.overview.dates) {
+    const d = new Date(date + 'T00:00:00');
+    const cell = document.createElement('div');
+    let cls = 'transfer-cell';
+    if (date === booking.booking_date && state.transferDate === date && !state.transferTime) cls += ' current';
+    else if (date === state.transferDate) cls += ' selected';
+    cell.className = cls;
+    cell.innerHTML = `
+      <div class="transfer-cell-num">${d.getDate()}</div>
+      <div class="transfer-cell-meta">${TH_MONTH_SHORT[d.getMonth()]}</div>
+    `;
+    cell.onclick = () => {
+      state.transferDate = date;
+      state.transferTime = null;
+      $('transfer-confirm').disabled = true;
+      renderTransferDates();
+      renderTransferTimes();
+    };
+    root.appendChild(cell);
+  }
+}
+
+function renderTransferTimes() {
+  const root = $('transfer-times');
+  root.innerHTML = '';
+  const booking = state.transferBooking;
+  const date = state.transferDate;
+  const matrix = state.overview.matrix[date];
+  const cap = state.overview.capacity;
+
+  for (const time of state.overview.slots) {
+    const m = matrix[time];
+    const isCurrentSource = (date === booking.booking_date && time === booking.time_slot);
+    // For destination capacity, exclude this booking if it's currently in this slot
+    const usedAtDest = m.total_people - (isCurrentSource ? booking.num_people : 0);
+    const fits = usedAtDest + booking.num_people <= cap;
+
+    let cls = 'transfer-cell';
+    if (isCurrentSource) cls += ' current disabled';
+    else if (!fits) cls += ' disabled';
+    if (time === state.transferTime && !isCurrentSource) cls += ' selected';
+
+    const cell = document.createElement('div');
+    cell.className = cls;
+    cell.innerHTML = `
+      <div class="transfer-cell-num">${time}</div>
+      <div class="transfer-cell-meta">${usedAtDest}/${cap}${isCurrentSource ? ' · เดิม' : (!fits ? ' · เต็ม' : '')}</div>
+    `;
+    if (!isCurrentSource && fits) {
+      cell.onclick = () => {
+        state.transferTime = time;
+        renderTransferTimes();
+        $('transfer-confirm').disabled = false;
+      };
+    }
+    root.appendChild(cell);
+  }
+}
+
+$('transfer-modal-close').onclick = closeTransferModal;
+$('transfer-cancel').onclick = closeTransferModal;
+$('transfer-modal').onclick = (e) => { if (e.target === $('transfer-modal')) closeTransferModal(); };
+
+$('transfer-confirm').onclick = async () => {
+  const b = state.transferBooking;
+  if (!b || !state.transferDate || !state.transferTime) return;
+  const btn = $('transfer-confirm');
+  btn.disabled = true; btn.textContent = '⏳ กำลังย้าย...';
+  try {
+    const res = await fetch(`/api/admin/bookings/${b.id}/transfer`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: state.transferDate, time: state.transferTime }),
+    });
+    if (res.status === 401) {
+      state.token = null; localStorage.removeItem('admin_token'); showLogin(); return;
+    }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.message || 'ย้ายรอบไม่สำเร็จ');
+      return;
+    }
+    closeTransferModal();
+    await refreshAll();
+  } catch {
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ ยืนยันย้ายรอบ';
+  }
+};
 
 // ─── Slip modal ────────────────────────────────────────────
 async function loadSlipImage(bookingId) {
