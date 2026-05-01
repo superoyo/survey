@@ -941,11 +941,37 @@ async function handleAction(action, booking, btn) {
 }
 
 // ─── Slip modal ────────────────────────────────────────────
+async function loadSlipImage(bookingId) {
+  const img = $('slip-img');
+  // Drop any previous blob URL
+  if (state.slipObjectUrl) {
+    URL.revokeObjectURL(state.slipObjectUrl);
+    state.slipObjectUrl = null;
+  }
+  img.removeAttribute('src');
+  img.alt = 'กำลังโหลด...';
+  try {
+    const res = await fetch(`/api/admin/bookings/${bookingId}/slip`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) {
+      img.alt = res.status === 404 ? 'ไม่พบไฟล์สลิป' : 'โหลดสลิปไม่สำเร็จ';
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    state.slipObjectUrl = url;
+    img.src = url;
+    img.alt = 'สลิปการชำระเงิน';
+  } catch {
+    img.alt = 'โหลดสลิปไม่สำเร็จ';
+  }
+}
+
 function openSlipModal(b) {
   state.modalBooking = b;
   $('slip-modal-title').textContent = `สลิป — ${b.name}`;
-  $('slip-img').src = `/api/admin/bookings/${b.id}/slip?t=${Date.now()}`;
-  $('slip-img').onerror = () => { $('slip-img').alt = 'โหลดสลิปไม่สำเร็จ'; };
+  loadSlipImage(b.id);
   $('slip-modal-info').innerHTML = `
     <div><b>ชื่อ:</b> ${escapeHtml(b.name)}</div>
     <div><b>เบอร์:</b> ${escapeHtml(b.phone)} &nbsp; <b>อีเมล:</b> ${escapeHtml(b.email)}</div>
@@ -959,6 +985,10 @@ function openSlipModal(b) {
 }
 
 function closeSlipModal() {
+  if (state.slipObjectUrl) {
+    URL.revokeObjectURL(state.slipObjectUrl);
+    state.slipObjectUrl = null;
+  }
   $('slip-modal').classList.remove('active');
   state.modalBooking = null;
 }
