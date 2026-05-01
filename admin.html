@@ -260,14 +260,13 @@
   .banner-empty .em-icon { font-size: 36px; margin-bottom: 6px; opacity: 0.6; }
   input[type="file"].hidden-file { display: none; }
 
-  /* ─── Three-pane layout ────────────────────────────────── */
+  /* ─── Two-pane layout (times | bookings) ───────────────── */
   .three-pane {
     display: grid;
     grid-template-columns: 220px 1fr;
     gap: 14px;
     align-items: start;
   }
-  .three-pane.with-times { grid-template-columns: 200px 220px 1fr; }
   .pane {
     background: #fff;
     border: 1px solid var(--border-soft);
@@ -292,42 +291,7 @@
   }
   .icon-btn:hover { background: var(--brand-peach); transform: rotate(60deg); }
 
-  /* Day items (left pane) */
-  .day-item {
-    padding: 12px 14px; border-radius: 14px;
-    cursor: pointer; margin-bottom: 6px;
-    border: 1.5px solid transparent;
-    transition: all 0.15s;
-    position: relative;
-  }
-  .day-item:hover { background: var(--brand-cream); }
-  .day-item.active {
-    background: linear-gradient(135deg, #FFE4D6, #FED7C5);
-    border-color: var(--brand-red);
-    box-shadow: 0 6px 14px rgba(255, 122, 109, 0.18);
-  }
-  .day-item-row { display: flex; align-items: baseline; gap: 8px; }
-  .day-item-num {
-    font-size: 22px; font-weight: 800; color: var(--text);
-    line-height: 1; min-width: 28px;
-  }
-  .day-item-day { font-size: 12px; font-weight: 700; color: var(--text); }
-  .day-item-month { font-size: 10px; color: var(--muted); }
-  .day-item-meta {
-    font-size: 11px; color: var(--muted);
-    margin-top: 4px; padding-left: 36px;
-  }
-  .day-item.active .day-item-meta { color: #7F1D1D; }
-  .day-item-pending {
-    position: absolute; top: 8px; right: 8px;
-    background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
-    color: #fff;
-    font-size: 9px; font-weight: 800;
-    padding: 1px 7px; border-radius: 999px;
-    box-shadow: 0 2px 6px rgba(249,115,22,0.3);
-  }
-
-  /* Time slot items (middle pane) */
+  /* Time slot items (left pane in dashboard) */
   .time-item {
     padding: 11px 13px; border-radius: 12px;
     cursor: pointer; margin-bottom: 6px;
@@ -523,7 +487,7 @@
 
   /* ─── Responsive ───────────────────────────────────────── */
   @media (max-width: 900px) {
-    .three-pane, .three-pane.with-times {
+    .three-pane {
       grid-template-columns: 1fr;
     }
     .pane-days, .pane-times {
@@ -596,17 +560,8 @@
 
         <div class="three-pane" id="three-pane">
 
-        <!-- Pane 1: Days -->
-        <aside class="pane pane-days">
-          <div class="pane-head">
-            <div class="pane-title">วันจอง</div>
-            <div class="pane-sub">10 วัน · กดเพื่อดูรอบ</div>
-          </div>
-          <div id="days-list"></div>
-        </aside>
-
-        <!-- Pane 2: Time slots (visible when day selected) -->
-        <aside class="pane pane-times" id="pane-times" style="display:none;">
+        <!-- Pane 1: Time slots for the drilled-in day -->
+        <aside class="pane pane-times" id="pane-times">
           <div class="pane-head">
             <div class="pane-title" id="times-title">รอบเวลา</div>
             <div class="pane-sub" id="times-sub">10 รอบ · กดเพื่อดูรายชื่อ</div>
@@ -805,7 +760,6 @@ async function bootApp() {
   switchTopView('home');
   await Promise.all([loadOverview(), loadBannerStatus()]);
   renderHomeDays();
-  renderDays();
   await loadBookings();
 }
 
@@ -827,11 +781,8 @@ document.querySelectorAll('.nav-link').forEach(btn => {
     const target = btn.dataset.view;
     switchTopView(target);
     if (target === 'home') {
-      // Reset drill state and refresh the grid
       state.selectedDate = null;
       state.selectedTime = null;
-      $('three-pane').classList.remove('with-times');
-      $('pane-times').style.display = 'none';
       renderHomeDays();
     }
     if (target === 'banner') loadBannerStatus();
@@ -881,12 +832,9 @@ function renderHomeDays() {
 function drillIntoDay(date) {
   state.selectedDate = date;
   state.selectedTime = null;
-  $('three-pane').classList.add('with-times');
-  $('pane-times').style.display = 'block';
   $('dashboard-title').textContent = fmtDateTitle(date);
   $('dashboard-sub').textContent = `${state.overview.slots.length} รอบ · กดเลือกรอบเพื่อดูรายชื่อ`;
   switchTopView('dashboard');
-  renderDays();
   renderTimes();
   loadBookings();
 }
@@ -894,8 +842,6 @@ function drillIntoDay(date) {
 $('back-to-home').onclick = () => {
   state.selectedDate = null;
   state.selectedTime = null;
-  $('three-pane').classList.remove('with-times');
-  $('pane-times').style.display = 'none';
   switchTopView('home');
   renderHomeDays();
 };
@@ -996,37 +942,7 @@ function dayAggregate(date) {
   return { total, verified, pending };
 }
 
-// ─── Pane 1: Days ──────────────────────────────────────────
-function renderDays() {
-  const root = $('days-list');
-  root.innerHTML = '';
-  for (const date of state.overview.dates) {
-    const d = new Date(date + 'T00:00:00');
-    const agg = dayAggregate(date);
-    const item = document.createElement('div');
-    item.className = 'day-item' + (date === state.selectedDate ? ' active' : '');
-    const pendingPill = agg.pending > 0
-      ? `<div class="day-item-pending">${agg.pending}</div>` : '';
-    const meta = agg.total > 0
-      ? `<b>${agg.total}</b> คน · ✓${agg.verified}`
-      : `ยังไม่มีจอง`;
-    item.innerHTML = `
-      ${pendingPill}
-      <div class="day-item-row">
-        <div class="day-item-num">${d.getDate()}</div>
-        <div>
-          <div class="day-item-day">${TH_DAY_SHORT[d.getDay()]}</div>
-          <div class="day-item-month">${TH_MONTH_SHORT[d.getMonth()]}</div>
-        </div>
-      </div>
-      <div class="day-item-meta">${meta}</div>
-    `;
-    item.onclick = () => selectDay(date);
-    root.appendChild(item);
-  }
-}
-
-// ─── Pane 2: Time slots ────────────────────────────────────
+// ─── Time slots pane ───────────────────────────────────────
 function renderTimes() {
   if (!state.selectedDate) return;
   const date = state.selectedDate;
@@ -1178,38 +1094,16 @@ function renderBookingRow(b) {
   return div;
 }
 
-// ─── Selection handlers ───────────────────────────────────
-async function selectDay(date) {
-  // Toggle: clicking the active day deselects
-  if (state.selectedDate === date) {
-    state.selectedDate = null;
-    state.selectedTime = null;
-    $('three-pane').classList.remove('with-times');
-    $('pane-times').style.display = 'none';
-  } else {
-    state.selectedDate = date;
-    state.selectedTime = null;
-    $('three-pane').classList.add('with-times');
-    $('pane-times').style.display = 'block';
-    renderTimes();
-  }
-  renderDays();
-  await loadBookings();
-}
-
+// ─── Selection handler ───────────────────────────────────
 async function selectTime(time) {
-  if (state.selectedTime === time) {
-    state.selectedTime = null;
-  } else {
-    state.selectedTime = time;
-  }
+  // Toggle: clicking the active time deselects (back to "all-day" list)
+  state.selectedTime = state.selectedTime === time ? null : time;
   renderTimes();
   await loadBookings();
 }
 
 $('bookings-refresh').onclick = async () => {
   await loadOverview();
-  renderDays();
   if (state.selectedDate) renderTimes();
   await loadBookings();
 };
@@ -1245,7 +1139,6 @@ async function handleAction(action, booking, btn) {
 async function refreshAll() {
   await loadOverview();
   renderHomeDays();
-  renderDays();
   if (state.selectedDate) renderTimes();
   await loadBookings();
 }
@@ -1429,10 +1322,7 @@ $('slip-verify').onclick = async () => {
   try {
     await api('POST', `/api/admin/bookings/${b.id}/verify`);
     closeSlipModal();
-    await loadOverview();
-    renderDays();
-    if (state.selectedDate) renderTimes();
-    await loadBookings();
+    await refreshAll();
   } catch { alert('เกิดข้อผิดพลาด'); }
   finally { $('slip-verify').disabled = false; }
 };
@@ -1445,10 +1335,7 @@ $('slip-reject').onclick = async () => {
   try {
     await api('POST', `/api/admin/bookings/${b.id}/reject`, { reason });
     closeSlipModal();
-    await loadOverview();
-    renderDays();
-    if (state.selectedDate) renderTimes();
-    await loadBookings();
+    await refreshAll();
   } catch { alert('เกิดข้อผิดพลาด'); }
   finally { $('slip-reject').disabled = false; }
 };
