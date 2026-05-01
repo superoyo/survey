@@ -644,10 +644,10 @@ const TH_MONTH_LONG  = ['มกราคม','กุมภาพันธ์','�
 const TH_DAY_SHORT   = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 
 const STATUS_LABEL = {
-  pending:   { label: 'รอชำระเงิน',     icon: '💳', cls: 'status-pending',   badge: 'pending'   },
-  submitted: { label: 'รอตรวจสอบสลิป', icon: '⏳', cls: 'status-submitted', badge: 'submitted' },
-  verified:  { label: 'ยืนยันแล้ว',      icon: '✅', cls: 'status-verified',  badge: 'verified'  },
-  rejected:  { label: 'สลิปไม่ถูกต้อง', icon: '❌', cls: 'status-rejected',  badge: 'rejected'  },
+  pending:   { label: 'รอชำระเงิน',          icon: '💳', cls: 'status-pending',   badge: 'pending'   },
+  submitted: { label: 'รอตรวจสอบสลิป',      icon: '⏳', cls: 'status-submitted', badge: 'submitted' },
+  verified:  { label: 'ยืนยันแล้ว',           icon: '✅', cls: 'status-verified',  badge: 'verified'  },
+  rejected:  { label: 'ปฏิเสธการชำระเงิน',  icon: '❌', cls: 'status-rejected',  badge: 'rejected'  },
 };
 
 const state = {
@@ -916,14 +916,18 @@ function renderStatusBlock(b, container) {
         <div class="ticket-code">${escapeHtml(b.code)}</div>
         <div style="font-size:12px;">นำรหัสนี้มาแสดงในวันใช้สิทธิ์</div>
       </div>`;
-  } else if (b.payment_status === 'rejected' && b.rejected_reason) {
-    extra = `<div style="margin-top:8px; font-size:13px;"><b>เหตุผล:</b> ${escapeHtml(b.rejected_reason)}</div>`;
+  } else if (b.payment_status === 'rejected') {
+    extra = `
+      <div style="margin-top:14px; padding:12px 14px; background:rgba(255,255,255,0.7); border-radius:12px; border:1px dashed #DC2626;">
+        <div style="font-size:11px; font-weight:700; color:#7F1D1D; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">เหตุผลที่แอดมินปฏิเสธ</div>
+        <div style="font-size:14px; color:#7F1D1D;">${escapeHtml(b.rejected_reason || 'สลิปไม่ผ่านการตรวจสอบ')}</div>
+      </div>`;
   }
   let desc = '';
   if (b.payment_status === 'pending')   desc = 'กรุณาโอนเงินตามรายละเอียดด้านล่าง แล้วกลับมาแนบสลิป';
   if (b.payment_status === 'submitted') desc = 'ทางร้านได้รับสลิปแล้ว กรุณารอการตรวจสอบ (ปกติภายใน 24 ชม.)';
   if (b.payment_status === 'verified')  desc = 'การชำระเงินได้รับการยืนยัน — ตั๋วของคุณพร้อมใช้งาน';
-  if (b.payment_status === 'rejected')  desc = 'สลิปไม่ผ่านการตรวจสอบ กรุณาแนบสลิปใหม่';
+  if (b.payment_status === 'rejected')  desc = 'แอดมินตรวจสอบสลิปแล้วไม่ผ่าน — กรุณาแนบสลิปใหม่ตามเหตุผลด้านล่าง';
 
   container.innerHTML = `
     <div class="status-card ${s.cls}">

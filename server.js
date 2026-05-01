@@ -245,7 +245,8 @@ app.post('/api/booking', (req, res) => {
   }
 });
 
-// Lookup bookings by phone (used when returning users come back)
+// Lookup bookings by phone (used when returning users come back).
+// Includes rejected bookings so the customer can see *why* and re-upload.
 app.get('/api/booking/lookup', (req, res) => {
   const phone = String(req.query.phone || '').trim();
   if (!/^[0-9\-+\s()]{9,15}$/.test(phone)) {
@@ -253,7 +254,7 @@ app.get('/api/booking/lookup', (req, res) => {
   }
   const rows = db.prepare(`
     SELECT * FROM bookings
-    WHERE phone = ? AND payment_status != 'rejected'
+    WHERE phone = ?
     ORDER BY booking_date ASC, time_slot ASC, created_at ASC
   `).all(phone);
   res.json({ bookings: rows.map(publicView) });
@@ -286,6 +287,21 @@ app.post('/api/booking/:id/slip', (req, res, next) => {
   if (booking.payment_status === 'verified') {
     unlinkSlip(req.file.filename);
     return res.status(409).json({ error: 'already_verified', message: 'การชำระเงินได้รับการยืนยันแล้ว' });
+  }
+
+  // When re-uploading from rejected state, the slot capacity was freed —
+  // recheck before letting the booking back in (someone else may have taken the seats).
+  if (booking.payment_status === 'rejected') {
+    const used = slotUsage(booking.booking_date, booking.time_slot);
+    if (used + booking.num_people > SLOT_CAPACITY) {
+      unlinkSlip(req.file.filename);
+      const remaining = SLOT_CAPACITY - used;
+      return res.status(409).json({
+        error: 'slot_full',
+        remaining,
+        message: `ขออภัย รอบนี้เต็มแล้ว เหลือเพียง ${remaining} ที่ — กรุณาทำการจองรอบใหม่`,
+      });
+    }
   }
 
   if (booking.slip_path) unlinkSlip(booking.slip_path);
