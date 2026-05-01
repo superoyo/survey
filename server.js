@@ -148,6 +148,31 @@ function unlinkSlip(filename) {
   try { fs.unlinkSync(path.join(SLIPS_DIR, filename)); } catch {}
 }
 
+// ─── Banner image (single file at DATA_DIR/banner.<ext>) ────────────────
+const BANNER_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+function findBanner() {
+  for (const ext of BANNER_EXTS) {
+    const p = path.join(DATA_DIR, `banner.${ext}`);
+    if (fs.existsSync(p)) return { path: p, ext };
+  }
+  return null;
+}
+const bannerUpload = multer({
+  storage: multer.diskStorage({
+    destination: DATA_DIR,
+    filename: (req, file, cb) => {
+      const raw = (path.extname(file.originalname) || '.jpg').toLowerCase().slice(1).replace(/[^a-z0-9]/g, '');
+      const safe = BANNER_EXTS.includes(raw) ? raw : 'jpg';
+      cb(null, `banner.${safe}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — banners can be large
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpe?g|png|webp|heic|heif)$/i.test(file.mimetype);
+    cb(ok ? null : new Error('invalid_type'), ok);
+  },
+});
+
 // ─── Admin auth ─────────────────────────────────────────────────────────
 const adminTokens = new Set();
 function requireAdmin(req, res, next) {
@@ -168,6 +193,64 @@ app.post('/api/admin/login', (req, res) => {
 app.post('/api/admin/logout', requireAdmin, (req, res) => {
   adminTokens.delete(req.headers.authorization.slice(7));
   res.status(204).end();
+});
+
+// ─── Banner (public read, admin write) ──────────────────────────────────
+app.get('/banner', (req, res) => {
+  const found = findBanner();
+  if (!found) return res.status(404).end();
+  res.set('Cache-Control', 'public, max-age=60');
+  res.sendFile(found.path);
+});
+
+app.get('/api/banner', (req, res) => {
+  const found = findBanner();
+  if (!found) return res.json({ exists: false });
+  const stat = fs.statSync(found.path);
+  res.json({
+    exists: true,
+    ext: found.ext,
+    size: stat.size,
+    uploaded_at: stat.mtime.toISOString(),
+  });
+});
+
+app.post('/api/admin/banner', requireAdmin, (req, res, next) => {
+  bannerUpload.single('banner')(req, res, (err) => {
+    if (err) {
+      if (err.message === 'invalid_type') return res.status(400).json({ error: 'invalid_type', message: 'รองรับเฉพาะรูปภาพ JPG/PNG/WEBP/HEIC' });
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'too_large', message: 'ไฟล์ใหญ่เกิน 10MB' });
+      return res.status(400).json({ error: 'upload_failed', message: err.message });
+    }
+    next();
+  });
+}, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no_file', message: 'กรุณาเลือกไฟล์ banner' });
+  // Drop other-extension banners — keep only the one we just wrote
+  for (const ext of BANNER_EXTS) {
+    const p = path.join(DATA_DIR, `banner.${ext}`);
+    if (p !== req.file.path && fs.existsSync(p)) {
+      try { fs.unlinkSync(p); } catch {}
+    }
+  }
+  const stat = fs.statSync(req.file.path);
+  res.json({
+    exists: true,
+    ext: path.extname(req.file.filename).slice(1),
+    size: stat.size,
+    uploaded_at: stat.mtime.toISOString(),
+  });
+});
+
+app.delete('/api/admin/banner', requireAdmin, (req, res) => {
+  let removed = 0;
+  for (const ext of BANNER_EXTS) {
+    const p = path.join(DATA_DIR, `banner.${ext}`);
+    if (fs.existsSync(p)) {
+      try { fs.unlinkSync(p); removed++; } catch {}
+    }
+  }
+  res.json({ removed });
 });
 
 // ─── Public APIs ────────────────────────────────────────────────────────

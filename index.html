@@ -423,11 +423,10 @@
 <body>
   <div class="page">
 
-    <!-- KV hero banner — drop kv-banner.jpg into /assets/ -->
+    <!-- KV hero banner — admin uploads via หลังบ้าน → served from /banner -->
     <div class="kv-hero">
-      <img src="/assets/kv-banner.jpg" alt="สถานีทุเรียนไอยรา · บุฟเฟ่ต์ทุเรียน 199 บาท/รอบ"
-           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-      <div class="kv-fallback" style="display:none;">
+      <img id="kv-banner-img" alt="สถานีทุเรียนไอยรา · บุฟเฟ่ต์ทุเรียน 199 บาท/รอบ" style="display:none;" />
+      <div class="kv-fallback" id="kv-fallback">
         <div>
           <div class="ttl">🚂 สถานีทุเรียนไอยรา</div>
           <div class="sub">บุฟเฟ่ต์ทุเรียน · 199 บาท/รอบ · 15-24 พ.ค. 2569 · 10.00-19.00</div>
@@ -1080,6 +1079,23 @@ $('lk-upload-slip').onclick = async () => {
 };
 
 updatePeople();
+
+// ─── Dynamic banner loader ─────────────────────────────────
+(async () => {
+  try {
+    const res = await fetch('/api/banner');
+    if (!res.ok) return;
+    const meta = await res.json();
+    if (!meta.exists) return;
+    const img = $('kv-banner-img');
+    img.onload = () => {
+      img.style.display = 'block';
+      $('kv-fallback').style.display = 'none';
+    };
+    img.onerror = () => { /* keep fallback */ };
+    img.src = '/banner?v=' + encodeURIComponent(meta.uploaded_at || Date.now());
+  } catch { /* keep fallback */ }
+})();
 </script>
 </body>
 </html>

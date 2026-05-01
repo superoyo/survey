@@ -130,6 +130,38 @@
   .alert { padding: 12px; border-radius: 12px; font-size: 13px; margin-bottom: 12px; font-weight: 600; }
   .alert.error { background: #FEF2F2; color: #991B1B; border: 1px solid #FCA5A5; }
 
+  /* ─── Banner card ──────────────────────────────────────── */
+  .banner-card {
+    background: #fff;
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 6px 18px rgba(255, 158, 145, 0.08);
+  }
+  .banner-card-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .banner-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .banner-preview-wrap {
+    background: var(--brand-cream);
+    border: 1.5px dashed var(--border);
+    border-radius: 14px; min-height: 100px;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .banner-preview {
+    width: 100%; max-height: 280px; object-fit: contain;
+    display: block;
+  }
+  .banner-empty {
+    text-align: center; color: var(--muted); font-size: 13px;
+    padding: 28px 16px;
+  }
+  .banner-empty .em-icon { font-size: 36px; margin-bottom: 6px; opacity: 0.6; }
+  input[type="file"].hidden-file { display: none; }
+
   /* ─── Three-pane layout ────────────────────────────────── */
   .three-pane {
     display: grid;
@@ -400,6 +432,29 @@
       <div class="page-title">ภาพรวมการจอง</div>
       <div class="page-sub">เทศกาลทุเรียน 15-24 พฤษภาคม 2569 · 199 บาท/รอบ · รอบละ 100 คน</div>
 
+      <!-- Banner management -->
+      <div class="banner-card">
+        <div class="banner-card-head">
+          <div>
+            <div class="pane-title">Banner หน้าจอง</div>
+            <div class="pane-sub" id="banner-status">กำลังโหลด...</div>
+          </div>
+          <div class="banner-card-actions">
+            <input type="file" id="banner-input" class="hidden-file" accept="image/*" />
+            <button class="btn btn-info" id="banner-upload-btn">📤 อัพโหลด</button>
+            <button class="btn btn-danger" id="banner-remove-btn" style="display:none;">🗑 ลบ</button>
+          </div>
+        </div>
+        <div class="banner-preview-wrap">
+          <img id="banner-preview" class="banner-preview" style="display:none;" alt="banner" />
+          <div class="banner-empty" id="banner-empty">
+            <div class="em-icon">🖼️</div>
+            <div>ยังไม่มี banner — อัพโหลดเพื่อแสดงด้านบนหน้าจองของลูกค้า</div>
+            <div style="font-size:11px; margin-top:4px; opacity:0.7;">JPG / PNG / WEBP ไม่เกิน 10MB · แนะนำสัดส่วน 1714×396</div>
+          </div>
+        </div>
+      </div>
+
       <div class="three-pane" id="three-pane">
 
         <!-- Pane 1: Days -->
@@ -557,10 +612,76 @@ $('logout-btn').onclick = async () => {
 
 // ─── Boot ──────────────────────────────────────────────────
 async function bootApp() {
-  await loadOverview();
+  await Promise.all([loadOverview(), loadBannerStatus()]);
   renderDays();
   await loadBookings();
 }
+
+// ─── Banner management ────────────────────────────────────
+async function loadBannerStatus() {
+  try {
+    const res = await fetch('/api/banner');
+    const meta = await res.json();
+    const img = $('banner-preview');
+    const empty = $('banner-empty');
+    const status = $('banner-status');
+    const removeBtn = $('banner-remove-btn');
+    if (meta.exists) {
+      img.src = '/banner?v=' + encodeURIComponent(meta.uploaded_at);
+      img.style.display = 'block';
+      empty.style.display = 'none';
+      removeBtn.style.display = 'inline-flex';
+      const sizeKb = (meta.size / 1024).toFixed(0);
+      const when = new Date(meta.uploaded_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+      status.textContent = `${meta.ext.toUpperCase()} · ${sizeKb} KB · อัพเดต ${when}`;
+    } else {
+      img.style.display = 'none';
+      empty.style.display = 'block';
+      removeBtn.style.display = 'none';
+      status.textContent = 'ยังไม่มี banner';
+    }
+  } catch {
+    $('banner-status').textContent = 'โหลดสถานะ banner ไม่สำเร็จ';
+  }
+}
+
+$('banner-upload-btn').onclick = () => $('banner-input').click();
+
+$('banner-input').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { alert('กรุณาเลือกไฟล์รูปภาพ'); return; }
+  if (file.size > 10 * 1024 * 1024)  { alert('ไฟล์ใหญ่เกิน 10MB'); return; }
+
+  const fd = new FormData();
+  fd.append('banner', file);
+  const btn = $('banner-upload-btn');
+  btn.disabled = true; btn.textContent = '⏳ กำลังอัพโหลด...';
+  try {
+    const res = await fetch('/api/admin/banner', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.message || 'อัพโหลดไม่สำเร็จ');
+      return;
+    }
+    await loadBannerStatus();
+  } catch {
+    alert('เกิดข้อผิดพลาด');
+  } finally {
+    btn.disabled = false; btn.textContent = '📤 อัพโหลด';
+    $('banner-input').value = '';
+  }
+};
+
+$('banner-remove-btn').onclick = async () => {
+  if (!confirm('ลบ banner ปัจจุบัน? หน้าจองจะกลับไปแสดง fallback')) return;
+  await api('DELETE', '/api/admin/banner');
+  await loadBannerStatus();
+};
 
 // ─── Date helpers ──────────────────────────────────────────
 function fmtDateLong(iso) {
