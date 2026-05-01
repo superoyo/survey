@@ -682,6 +682,12 @@
             <button type="button" class="filter-chip" data-filter="submitted">
               ⏳ รอตรวจสลิป <span class="filter-chip-count" id="chip-count-submitted">0</span>
             </button>
+            <button type="button" class="filter-chip" data-filter="verified">
+              🎫 ออกตั๋วแล้ว <span class="filter-chip-count" id="chip-count-verified">0</span>
+            </button>
+            <button type="button" class="filter-chip" data-filter="pending">
+              💳 ยังไม่โอน <span class="filter-chip-count" id="chip-count-pending">0</span>
+            </button>
           </div>
 
           <div id="slot-stats" class="stats-row" style="display:none;">
@@ -1192,25 +1198,39 @@ function renderBookings() {
   }
 
   // Filter chip counts (always show against the unfiltered total)
-  const submittedCount = state.bookings.filter(b => b.payment_status === 'submitted').length;
-  $('chip-count-all').textContent = state.bookings.length;
-  $('chip-count-submitted').textContent = submittedCount;
+  const counts = {
+    all: state.bookings.length,
+    submitted: state.bookings.filter(b => b.payment_status === 'submitted').length,
+    verified:  state.bookings.filter(b => b.payment_status === 'verified' && !b.used).length,
+    pending:   state.bookings.filter(b => b.payment_status === 'pending').length,
+  };
+  $('chip-count-all').textContent       = counts.all;
+  $('chip-count-submitted').textContent = counts.submitted;
+  $('chip-count-verified').textContent  = counts.verified;
+  $('chip-count-pending').textContent   = counts.pending;
 
   // Apply filter
-  let filtered = state.bookings;
-  if (state.bookingFilter === 'submitted') {
-    filtered = filtered.filter(b => b.payment_status === 'submitted');
-  }
+  const FILTERS = {
+    all:       _ => true,
+    submitted: b => b.payment_status === 'submitted',
+    verified:  b => b.payment_status === 'verified' && !b.used,
+    pending:   b => b.payment_status === 'pending',
+  };
+  const filtered = state.bookings.filter(FILTERS[state.bookingFilter] || FILTERS.all);
 
   // List
   const list = $('bookings-list');
   list.innerHTML = '';
   if (!filtered.length) {
     $('bookings-empty').style.display = 'block';
+    const emptyMsg = {
+      all:       'ยังไม่มีการจอง',
+      submitted: 'ไม่มีสลิปรอตรวจในรายการนี้',
+      verified:  'ไม่มีตั๋วที่ออกไว้รอใช้สิทธิ์',
+      pending:   'ไม่มีรายการที่ยังไม่โอน',
+    };
     $('bookings-empty').querySelector('div:last-child').textContent =
-      state.bookingFilter === 'submitted'
-        ? 'ไม่มีสลิปรอตรวจในรายการนี้'
-        : 'ยังไม่มีการจอง';
+      emptyMsg[state.bookingFilter] || emptyMsg.all;
     return;
   }
   $('bookings-empty').style.display = 'none';
@@ -1218,6 +1238,14 @@ function renderBookings() {
   for (const b of filtered) {
     list.appendChild(renderBookingRow(b));
   }
+}
+
+// Minutes elapsed since booking was created (UTC stored in SQLite)
+function elapsedMinutes(b) {
+  if (!b.created_at) return null;
+  const created = new Date(b.created_at + 'Z');
+  if (isNaN(created)) return null;
+  return Math.floor((Date.now() - created) / 60000);
 }
 
 // Filter chip click handlers
@@ -1260,9 +1288,20 @@ function renderBookingRow(b) {
   if (b.payment_status === 'verified' || b.payment_status === 'rejected' || b.payment_status === 'cancelled') {
     actions.push(`<button class="btn btn-ghost" data-action="reset">รีเซ็ต</button>`);
   }
-  // Cancel — for any non-cancelled, non-used booking. Typical use: payment hasn't arrived in time.
+  // Cancel — for any non-cancelled, non-used booking. Pending bookings get a
+  // live elapsed-minutes badge so the operator can spot ones past the
+  // 1-hour grace window at a glance.
   if (b.payment_status !== 'cancelled' && !b.used) {
-    actions.push(`<button class="btn btn-danger" data-action="cancel">🚫 ยกเลิก</button>`);
+    let cancelLabel = '🚫 ยกเลิก';
+    if (b.payment_status === 'pending') {
+      const mins = elapsedMinutes(b);
+      if (mins !== null) {
+        cancelLabel = mins >= 60
+          ? `🚫 ยกเลิก · เกิน ${mins} นาที`
+          : `🚫 ยกเลิก · ${mins} นาที`;
+      }
+    }
+    actions.push(`<button class="btn btn-danger" data-action="cancel">${cancelLabel}</button>`);
   }
   if (b.payment_status === 'pending' && !b.has_slip) {
     actions.unshift(`<span style="font-size:11px; color:var(--muted); padding: 6px 10px;">ยังไม่ส่งสลิป</span>`);
@@ -1315,7 +1354,12 @@ async function handleAction(action, booking, btn) {
   if (action === 'view-slip') return openSlipModal(booking);
   if (action === 'transfer')  return openTransferModal(booking);
   if (action === 'cancel') {
-    const reason = prompt('เหตุผลในการยกเลิก (ผู้จองจะเห็นข้อความนี้):', 'ไม่ได้รับการชำระเงินภายในเวลาที่กำหนด');
+    // Default reason adapts to the booking state: pending = the typical
+    // "no transfer in 1 hour" timeout case; others = generic.
+    const defaultReason = booking.payment_status === 'pending'
+      ? 'เกินเวลา 1 ชั่วโมงหลังจอง — ยังไม่ได้รับการชำระเงิน'
+      : 'ไม่ได้รับการชำระเงินภายในเวลาที่กำหนด';
+    const reason = prompt('เหตุผลในการยกเลิก (ผู้จองจะเห็นข้อความนี้):', defaultReason);
     if (reason === null) return;
     btn.disabled = true;
     try {
