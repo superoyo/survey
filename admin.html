@@ -359,7 +359,7 @@
   /* ─── Two-pane layout (times | bookings) ───────────────── */
   .three-pane {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: 300px 1fr;
     gap: 14px;
     align-items: start;
   }
@@ -420,6 +420,25 @@
     font-size: 9px; font-weight: 800;
     padding: 1px 6px; border-radius: 999px;
   }
+  .time-item-stats {
+    display: flex; flex-direction: column;
+    gap: 2px;
+    margin-top: 8px;
+    font-size: 11px;
+  }
+  .time-item-stat-line {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 3px 0;
+    border-bottom: 1px dashed var(--border-soft);
+  }
+  .time-item-stat-line:last-child { border-bottom: 0; }
+  .time-item-stat-line .lbl { color: var(--muted); }
+  .time-item-stat-line .val {
+    font-weight: 800; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .time-item-stat-line.alert .val { color: var(--danger); }
+  .time-item.empty .time-item-stats { display: none; }
 
   /* Stats row (slot mode) */
   .stats-row {
@@ -474,67 +493,75 @@
     border: 1px solid var(--border-soft);
   }
 
-  /* Booking row card */
+  /* Booking row card — compact */
   .booking-row {
     background: #fff;
     border: 1.5px solid var(--border-soft);
-    border-radius: 14px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
     transition: all 0.15s;
   }
-  .booking-row:hover { box-shadow: 0 6px 18px rgba(255,122,109,0.12); border-color: var(--border); }
+  .booking-row:hover { box-shadow: 0 4px 12px rgba(255,122,109,0.12); border-color: var(--border); }
   .booking-row.used { background: #F0FDF4; border-color: #BBF7D0; }
   .booking-row.rejected { background: #FEF2F2; opacity: 0.7; }
   .booking-row.cancelled { background: #F9FAFB; opacity: 0.65; border-style: dashed; }
   .booking-row-head {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    gap: 10px; margin-bottom: 6px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px;
   }
-  .booking-row-name { font-weight: 800; font-size: 16px; color: var(--text); }
+  .booking-row-name { font-weight: 800; font-size: 14px; color: var(--text); }
   .booking-row-key {
-    display: flex; flex-wrap: wrap; gap: 10px;
+    display: flex; flex-wrap: wrap; gap: 8px;
     align-items: center;
-    margin: 10px 0 6px;
+    margin: 4px 0;
   }
   .key-phone {
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 800;
     color: var(--text);
     font-family: ui-monospace, "SF Mono", monospace;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
   }
   .key-people {
     background: linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 100%);
     color: #fff;
-    padding: 5px 14px;
+    padding: 3px 11px;
     border-radius: 999px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.3px;
-    box-shadow: 0 4px 10px rgba(255, 122, 109, 0.3);
+    box-shadow: 0 2px 6px rgba(255, 122, 109, 0.25);
   }
   .booking-row-secondary {
-    display: flex; flex-wrap: wrap; gap: 8px;
+    display: flex; flex-wrap: wrap; gap: 6px;
     align-items: center;
-    margin-top: 6px;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--muted);
   }
   .booking-row-secondary .when-chip {
     background: var(--brand-cream);
-    padding: 4px 12px; border-radius: 999px;
+    padding: 3px 10px; border-radius: 999px;
     color: var(--text); font-weight: 600;
   }
   .booking-row-code {
     display: inline-block;
     font-family: ui-monospace, "SF Mono", monospace;
-    font-weight: 800; letter-spacing: 2px;
+    font-weight: 800; letter-spacing: 1.5px;
     color: var(--text);
     background: #FFF;
-    padding: 4px 12px; border-radius: 8px;
-    border: 1.5px dashed var(--brand-red);
-    font-size: 12px;
+    padding: 3px 10px; border-radius: 6px;
+    border: 1px dashed var(--brand-red);
+    font-size: 11px;
+  }
+  .booking-row-actions {
+    display: flex; gap: 5px; flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .booking-row-actions .btn {
+    padding: 6px 11px;
+    font-size: 11px;
+    border-radius: 8px;
   }
   .booking-row-actions {
     display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px;
@@ -1283,6 +1310,31 @@ function renderTimes() {
       ? `<div class="time-item-pending">${m.pending_review_count}</div>` : '';
     const item = document.createElement('div');
     item.className = cls;
+    const paid = m.verified_people + m.pending_review_people;
+    const statsHtml = m.total_people > 0 ? `
+      <div class="time-item-stats">
+        <div class="time-item-stat-line">
+          <span class="lbl">ลูกค้าทั้งหมด</span>
+          <span class="val">${m.total_people} คน</span>
+        </div>
+        <div class="time-item-stat-line">
+          <span class="lbl">จ่ายเงินแล้ว</span>
+          <span class="val">${paid} คน</span>
+        </div>
+        <div class="time-item-stat-line${m.unpaid_people > 0 ? ' alert' : ''}">
+          <span class="lbl">ยังไม่จ่ายเงิน</span>
+          <span class="val">${m.unpaid_people} คน</span>
+        </div>
+        <div class="time-item-stat-line">
+          <span class="lbl">รายการจอง</span>
+          <span class="val">${m.bookings_count}</span>
+        </div>
+        <div class="time-item-stat-line${m.unpaid_count > 0 ? ' alert' : ''}">
+          <span class="lbl">ยังไม่โอนเงิน</span>
+          <span class="val">${m.unpaid_count}</span>
+        </div>
+      </div>
+    ` : '';
     item.innerHTML = `
       ${pendingPill}
       <div class="time-item-row">
@@ -1290,6 +1342,7 @@ function renderTimes() {
         <div class="time-item-count">${m.total_people}/${capacity}</div>
       </div>
       <div class="time-item-bar"><div class="time-item-bar-fill" style="width:${pct}%"></div></div>
+      ${statsHtml}
     `;
     item.onclick = () => selectTime(time);
     root.appendChild(item);
