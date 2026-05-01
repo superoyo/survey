@@ -71,14 +71,40 @@
     font-size: 18px;
     box-shadow: 0 4px 10px rgba(255, 158, 145, 0.3);
   }
-  .topbar button {
+  .topbar button.logout {
     background: var(--brand-cream);
     border: 1.5px solid var(--border);
     color: var(--text);
     padding: 8px 16px; border-radius: 10px;
     cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700;
   }
-  .topbar button:hover { background: var(--brand-peach); }
+  .topbar button.logout:hover { background: var(--brand-peach); }
+
+  .topbar-nav {
+    display: flex; gap: 6px;
+    flex: 1; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .nav-link {
+    background: transparent;
+    border: 1.5px solid transparent;
+    padding: 8px 18px; border-radius: 10px;
+    cursor: pointer; font-family: inherit;
+    font-size: 13px; font-weight: 700;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+  .nav-link:hover { background: var(--brand-cream); color: var(--text); }
+  .nav-link.active {
+    background: linear-gradient(135deg, #FFE4D6 0%, #FED7C5 100%);
+    color: var(--brand-red-dark);
+    box-shadow: 0 4px 10px rgba(255, 122, 109, 0.18);
+  }
+  @media (max-width: 720px) {
+    .topbar { flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+    .topbar-nav { order: 3; flex-basis: 100%; justify-content: flex-start; }
+    .nav-link { padding: 6px 12px; font-size: 12px; }
+  }
 
   .container { padding: 24px; max-width: 1320px; margin: 0 auto; }
   .page-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; color: var(--text); }
@@ -423,39 +449,22 @@
     <div class="topbar">
       <div class="brand">
         <div class="brand-icon">🚂</div>
-        <div>สถานีทุเรียนไอยรา · หลังบ้าน</div>
+        <div>สถานีทุเรียนไอยรา</div>
       </div>
-      <button id="logout-btn">ออกจากระบบ</button>
+      <div class="topbar-nav">
+        <button class="nav-link active" data-view="dashboard">หน้าหลัก</button>
+        <button class="nav-link" data-view="banner">Banner Upload</button>
+      </div>
+      <button class="logout" id="logout-btn">ออกจากระบบ</button>
     </div>
 
     <div class="container">
-      <div class="page-title">ภาพรวมการจอง</div>
-      <div class="page-sub">เทศกาลทุเรียน 15-24 พฤษภาคม 2569 · 199 บาท/รอบ · รอบละ 100 คน</div>
+      <!-- ─── Dashboard view ────────────────────────────── -->
+      <div id="view-dashboard">
+        <div class="page-title">ภาพรวมการจอง</div>
+        <div class="page-sub">เทศกาลทุเรียน 15-24 พฤษภาคม 2569 · 199 บาท/รอบ · รอบละ 100 คน</div>
 
-      <!-- Banner management -->
-      <div class="banner-card">
-        <div class="banner-card-head">
-          <div>
-            <div class="pane-title">Banner หน้าจอง</div>
-            <div class="pane-sub" id="banner-status">กำลังโหลด...</div>
-          </div>
-          <div class="banner-card-actions">
-            <input type="file" id="banner-input" class="hidden-file" accept="image/*" />
-            <button class="btn btn-info" id="banner-upload-btn">📤 อัพโหลด</button>
-            <button class="btn btn-danger" id="banner-remove-btn" style="display:none;">🗑 ลบ</button>
-          </div>
-        </div>
-        <div class="banner-preview-wrap">
-          <img id="banner-preview" class="banner-preview" style="display:none;" alt="banner" />
-          <div class="banner-empty" id="banner-empty">
-            <div class="em-icon">🖼️</div>
-            <div>ยังไม่มี banner — อัพโหลดเพื่อแสดงด้านบนหน้าจองของลูกค้า</div>
-            <div style="font-size:11px; margin-top:4px; opacity:0.7;">JPG / PNG / WEBP ไม่เกิน 10MB · แนะนำสัดส่วน 1714×396</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="three-pane" id="three-pane">
+        <div class="three-pane" id="three-pane">
 
         <!-- Pane 1: Days -->
         <aside class="pane pane-days">
@@ -510,6 +519,35 @@
             <div>ยังไม่มีการจอง</div>
           </div>
         </main>
+        </div><!-- /.three-pane -->
+      </div><!-- /#view-dashboard -->
+
+      <!-- ─── Banner Upload view ─────────────────────────── -->
+      <div id="view-banner" style="display:none;">
+        <div class="page-title">Banner Upload</div>
+        <div class="page-sub">อัพโหลด banner ที่จะแสดงด้านบนสุดของหน้าจองลูกค้า · เก็บใน volume ของ Railway · persist ข้าม redeploy</div>
+
+        <div class="banner-card">
+          <div class="banner-card-head">
+            <div>
+              <div class="pane-title">Banner ปัจจุบัน</div>
+              <div class="pane-sub" id="banner-status">กำลังโหลด...</div>
+            </div>
+            <div class="banner-card-actions">
+              <input type="file" id="banner-input" class="hidden-file" accept="image/*" />
+              <button class="btn btn-info" id="banner-upload-btn">📤 อัพโหลด</button>
+              <button class="btn btn-danger" id="banner-remove-btn" style="display:none;">🗑 ลบ</button>
+            </div>
+          </div>
+          <div class="banner-preview-wrap">
+            <img id="banner-preview" class="banner-preview" style="display:none;" alt="banner" />
+            <div class="banner-empty" id="banner-empty">
+              <div class="em-icon">🖼️</div>
+              <div>ยังไม่มี banner — อัพโหลดเพื่อแสดงด้านบนหน้าจองของลูกค้า</div>
+              <div style="font-size:11px; margin-top:4px; opacity:0.7;">JPG / PNG / WEBP / HEIC ไม่เกิน 10MB · แนะนำสัดส่วน 1714×396</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -612,10 +650,26 @@ $('logout-btn').onclick = async () => {
 
 // ─── Boot ──────────────────────────────────────────────────
 async function bootApp() {
+  switchTopView('dashboard');
   await Promise.all([loadOverview(), loadBannerStatus()]);
   renderDays();
   await loadBookings();
 }
+
+// ─── Top-level nav (หน้าหลัก / Banner Upload) ─────────────
+function switchTopView(name) {
+  document.getElementById('view-dashboard').style.display = name === 'dashboard' ? 'block' : 'none';
+  document.getElementById('view-banner').style.display    = name === 'banner'    ? 'block' : 'none';
+  document.querySelectorAll('.nav-link').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === name);
+  });
+}
+document.querySelectorAll('.nav-link').forEach(btn => {
+  btn.onclick = () => {
+    switchTopView(btn.dataset.view);
+    if (btn.dataset.view === 'banner') loadBannerStatus();
+  };
+});
 
 // ─── Banner management ────────────────────────────────────
 async function loadBannerStatus() {
