@@ -487,6 +487,49 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
   res.json({ dates: BOOKING_DATES, slots: TIME_SLOTS, capacity: SLOT_CAPACITY, matrix });
 });
 
+// Free-text search across name + phone — used by admin home search bar.
+// Phone match strips formatting (-, +, spaces, parens) so "081 234 5678"
+// finds "0812345678" in the DB.
+app.get('/api/admin/search', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ bookings: [] });
+
+  const phoneClean = q.replace(/[\s\-+()]/g, '');
+  const phoneCondOK = /^\d+$/.test(phoneClean);
+  const nameLike  = `%${q}%`;
+  const phoneLike = `%${phoneClean}%`;
+
+  let rows;
+  if (phoneCondOK && phoneClean.length >= 2) {
+    rows = db.prepare(`
+      SELECT id, code, name, phone, email, num_people,
+             booking_date, time_slot,
+             payment_status, slip_path, slip_uploaded_at, verified_at, rejected_reason,
+             original_date, original_time, transferred_at,
+             used, used_at, created_at
+      FROM bookings
+      WHERE name LIKE ? OR phone LIKE ?
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(nameLike, phoneLike);
+  } else {
+    rows = db.prepare(`
+      SELECT id, code, name, phone, email, num_people,
+             booking_date, time_slot,
+             payment_status, slip_path, slip_uploaded_at, verified_at, rejected_reason,
+             original_date, original_time, transferred_at,
+             used, used_at, created_at
+      FROM bookings
+      WHERE name LIKE ?
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(nameLike);
+  }
+
+  const bookings = rows.map(b => ({ ...b, has_slip: !!b.slip_path, slip_path: undefined }));
+  res.json({ q, bookings });
+});
+
 // Unified bookings endpoint: latest (no filter) / per-day / per-slot.
 // Returns stats only when both date and time are provided (slot mode).
 app.get('/api/admin/bookings', requireAdmin, (req, res) => {
