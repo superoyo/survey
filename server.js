@@ -340,6 +340,57 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
   res.json({ dates: BOOKING_DATES, slots: TIME_SLOTS, capacity: SLOT_CAPACITY, matrix });
 });
 
+// Unified bookings endpoint: latest (no filter) / per-day / per-slot.
+// Returns stats only when both date and time are provided (slot mode).
+app.get('/api/admin/bookings', requireAdmin, (req, res) => {
+  const { date, time } = req.query;
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+
+  const conds = [`payment_status != 'rejected'`];
+  const params = [];
+
+  if (date) {
+    if (!BOOKING_DATES.includes(date)) return res.status(400).json({ error: 'invalid_date' });
+    conds.push('booking_date = ?');
+    params.push(date);
+    if (time) {
+      if (!TIME_SLOTS.includes(time)) return res.status(400).json({ error: 'invalid_time' });
+      conds.push('time_slot = ?');
+      params.push(time);
+    }
+  }
+
+  const rows = db.prepare(`
+    SELECT id, code, name, phone, email, num_people,
+           booking_date, time_slot,
+           payment_status, slip_path, slip_uploaded_at, verified_at, rejected_reason,
+           used, used_at, created_at
+    FROM bookings
+    WHERE ${conds.join(' AND ')}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(...params, limit);
+
+  const bookings = rows.map(b => ({ ...b, has_slip: !!b.slip_path, slip_path: undefined }));
+
+  let stats = null;
+  if (date && time) {
+    const total     = bookings.reduce((s, b) => s + b.num_people, 0);
+    const verified  = bookings.filter(b => b.payment_status === 'verified').reduce((s, b) => s + b.num_people, 0);
+    const submitted = bookings.filter(b => b.payment_status === 'submitted').reduce((s, b) => s + b.num_people, 0);
+    const usedCnt   = bookings.filter(b => b.used).reduce((s, b) => s + b.num_people, 0);
+    stats = {
+      capacity: SLOT_CAPACITY,
+      total_people: total,
+      verified_people: verified,
+      pending_review_people: submitted,
+      used_people: usedCnt,
+    };
+  }
+
+  res.json({ date: date || null, time: time || null, stats, bookings });
+});
+
 app.get('/api/admin/slot', requireAdmin, (req, res) => {
   const { date, time } = req.query;
   if (!BOOKING_DATES.includes(date) || !TIME_SLOTS.includes(time)) {
