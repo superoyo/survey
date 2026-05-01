@@ -156,6 +156,78 @@
   .alert { padding: 12px; border-radius: 12px; font-size: 13px; margin-bottom: 12px; font-weight: 600; }
   .alert.error { background: #FEF2F2; color: #991B1B; border: 1px solid #FCA5A5; }
 
+  /* ─── Home: day grid ───────────────────────────────────── */
+  .home-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 14px;
+  }
+  .home-day-card {
+    background: #fff;
+    border: 1.5px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(255, 158, 145, 0.08);
+  }
+  .home-day-card:hover {
+    border-color: var(--brand-red);
+    transform: translateY(-3px);
+    box-shadow: 0 14px 32px rgba(255, 122, 109, 0.2);
+  }
+  .home-day-card.empty { background: var(--brand-cream); opacity: 0.85; }
+  .home-day-head {
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .home-day-num {
+    font-size: 40px; font-weight: 800;
+    color: var(--text); line-height: 1;
+    letter-spacing: -1px;
+  }
+  .home-day-num.sun { color: #DC2626; }
+  .home-day-num.sat { color: #2563EB; }
+  .home-day-info { display: flex; flex-direction: column; }
+  .home-day-day { font-size: 13px; font-weight: 800; color: var(--text); line-height: 1.1; }
+  .home-day-month { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .home-day-bar {
+    height: 6px; background: var(--border-soft); border-radius: 999px;
+    overflow: hidden;
+  }
+  .home-day-bar-fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--brand-red) 0%, var(--brand-red-dark) 100%);
+    transition: width 0.3s;
+  }
+  .home-day-stats {
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .home-day-stat {
+    background: var(--brand-cream);
+    padding: 3px 10px; border-radius: 999px;
+    color: var(--muted);
+    font-size: 11px; font-weight: 700;
+  }
+  .home-day-stat.verified { background: #ECFDF5; color: #065F46; }
+  .home-day-stat.review   { background: #FFEDD5; color: #9A3412; }
+  .home-day-stat.muted    { color: var(--muted); }
+  .home-day-pending-pill {
+    position: absolute; top: 12px; right: 12px;
+    background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+    color: #fff;
+    font-size: 10px; font-weight: 800;
+    padding: 2px 9px; border-radius: 999px;
+    box-shadow: 0 3px 8px rgba(249,115,22,0.35);
+  }
+  .home-day-empty-msg {
+    font-size: 12px; color: var(--muted);
+    font-style: italic;
+  }
+
   /* ─── Banner card ──────────────────────────────────────── */
   .banner-card {
     background: #fff;
@@ -502,17 +574,25 @@
         <div>สถานีทุเรียนไอยรา</div>
       </div>
       <div class="topbar-nav">
-        <button class="nav-link active" data-view="dashboard">หน้าหลัก</button>
+        <button class="nav-link active" data-view="home">หน้าหลัก</button>
         <button class="nav-link" data-view="banner">Banner Upload</button>
       </div>
       <button class="logout" id="logout-btn">ออกจากระบบ</button>
     </div>
 
     <div class="container">
-      <!-- ─── Dashboard view ────────────────────────────── -->
-      <div id="view-dashboard">
+      <!-- ─── Home view: day grid (default landing) ────── -->
+      <div id="view-home">
         <div class="page-title">ภาพรวมการจอง</div>
-        <div class="page-sub">เทศกาลทุเรียน 15-24 พฤษภาคม 2569 · 199 บาท/รอบ · รอบละ 100 คน</div>
+        <div class="page-sub">เทศกาลทุเรียน 15-24 พฤษภาคม 2569 · 199 บาท/รอบ · กดเลือกวันเพื่อดูรายละเอียด</div>
+        <div class="home-grid" id="home-days"></div>
+      </div>
+
+      <!-- ─── Dashboard view: 3-pane drilldown ─────────── -->
+      <div id="view-dashboard" style="display:none;">
+        <a class="back-link" id="back-to-home">← กลับภาพรวม</a>
+        <div class="page-title" id="dashboard-title">รายละเอียดวัน</div>
+        <div class="page-sub" id="dashboard-sub">10 รอบ · กดเลือกรอบเพื่อดูรายชื่อ</div>
 
         <div class="three-pane" id="three-pane">
 
@@ -722,26 +802,103 @@ $('logout-btn').onclick = async () => {
 
 // ─── Boot ──────────────────────────────────────────────────
 async function bootApp() {
-  switchTopView('dashboard');
+  switchTopView('home');
   await Promise.all([loadOverview(), loadBannerStatus()]);
+  renderHomeDays();
   renderDays();
   await loadBookings();
 }
 
 // ─── Top-level nav (หน้าหลัก / Banner Upload) ─────────────
+// "home" and "dashboard" both belong to the หน้าหลัก section;
+// dashboard is the drilldown reached by clicking a day card.
 function switchTopView(name) {
-  document.getElementById('view-dashboard').style.display = name === 'dashboard' ? 'block' : 'none';
-  document.getElementById('view-banner').style.display    = name === 'banner'    ? 'block' : 'none';
+  $('view-home').style.display      = name === 'home'      ? 'block' : 'none';
+  $('view-dashboard').style.display = name === 'dashboard' ? 'block' : 'none';
+  $('view-banner').style.display    = name === 'banner'    ? 'block' : 'none';
   document.querySelectorAll('.nav-link').forEach(b => {
-    b.classList.toggle('active', b.dataset.view === name);
+    const v = b.dataset.view;
+    if (v === 'home')   b.classList.toggle('active', name === 'home' || name === 'dashboard');
+    if (v === 'banner') b.classList.toggle('active', name === 'banner');
   });
 }
 document.querySelectorAll('.nav-link').forEach(btn => {
   btn.onclick = () => {
-    switchTopView(btn.dataset.view);
-    if (btn.dataset.view === 'banner') loadBannerStatus();
+    const target = btn.dataset.view;
+    switchTopView(target);
+    if (target === 'home') {
+      // Reset drill state and refresh the grid
+      state.selectedDate = null;
+      state.selectedTime = null;
+      $('three-pane').classList.remove('with-times');
+      $('pane-times').style.display = 'none';
+      renderHomeDays();
+    }
+    if (target === 'banner') loadBannerStatus();
   };
 });
+
+// ─── Home grid: one card per booking date ─────────────────
+function renderHomeDays() {
+  const root = $('home-days');
+  root.innerHTML = '';
+  const cap = state.overview.capacity;
+  const slotCount = state.overview.slots.length;
+  const dayCap = cap * slotCount;
+  for (const date of state.overview.dates) {
+    const d = new Date(date + 'T00:00:00');
+    const agg = dayAggregate(date);
+    const pct = dayCap ? Math.min(100, (agg.total / dayCap) * 100) : 0;
+    const card = document.createElement('div');
+    card.className = 'home-day-card' + (agg.total === 0 ? ' empty' : '');
+    const wd = d.getDay();
+    const numClass = wd === 0 ? ' sun' : wd === 6 ? ' sat' : '';
+    const pendingPill = agg.pending > 0 ? `<div class="home-day-pending-pill">รอตรวจ ${agg.pending}</div>` : '';
+    const stats = agg.total > 0
+      ? `
+        <span class="home-day-stat">${agg.total} คน</span>
+        ${agg.verified > 0 ? `<span class="home-day-stat verified">✓ ${agg.verified}</span>` : ''}
+        ${agg.pending  > 0 ? `<span class="home-day-stat review">⏳ ${agg.pending}</span>`  : ''}
+      `
+      : `<span class="home-day-empty-msg">ยังไม่มีจอง</span>`;
+    card.innerHTML = `
+      ${pendingPill}
+      <div class="home-day-head">
+        <div class="home-day-num${numClass}">${d.getDate()}</div>
+        <div class="home-day-info">
+          <div class="home-day-day">${TH_DAY_LONG[wd]}</div>
+          <div class="home-day-month">${TH_MONTH_LONG[d.getMonth()]} ${d.getFullYear() + 543}</div>
+        </div>
+      </div>
+      <div class="home-day-bar"><div class="home-day-bar-fill" style="width:${pct}%"></div></div>
+      <div class="home-day-stats">${stats}</div>
+    `;
+    card.onclick = () => drillIntoDay(date);
+    root.appendChild(card);
+  }
+}
+
+function drillIntoDay(date) {
+  state.selectedDate = date;
+  state.selectedTime = null;
+  $('three-pane').classList.add('with-times');
+  $('pane-times').style.display = 'block';
+  $('dashboard-title').textContent = fmtDateTitle(date);
+  $('dashboard-sub').textContent = `${state.overview.slots.length} รอบ · กดเลือกรอบเพื่อดูรายชื่อ`;
+  switchTopView('dashboard');
+  renderDays();
+  renderTimes();
+  loadBookings();
+}
+
+$('back-to-home').onclick = () => {
+  state.selectedDate = null;
+  state.selectedTime = null;
+  $('three-pane').classList.remove('with-times');
+  $('pane-times').style.display = 'none';
+  switchTopView('home');
+  renderHomeDays();
+};
 
 // ─── Banner management ────────────────────────────────────
 async function loadBannerStatus() {
@@ -1087,6 +1244,7 @@ async function handleAction(action, booking, btn) {
 
 async function refreshAll() {
   await loadOverview();
+  renderHomeDays();
   renderDays();
   if (state.selectedDate) renderTimes();
   await loadBookings();
