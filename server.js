@@ -460,7 +460,8 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
       COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN num_people ELSE 0 END), 0) AS unpaid_people,
       COALESCE(SUM(CASE WHEN used = 1 THEN num_people ELSE 0 END), 0) AS used_people,
       COUNT(CASE WHEN payment_status NOT IN ('rejected', 'cancelled') THEN 1 END) AS bookings_count,
-      COUNT(CASE WHEN payment_status = 'submitted' THEN 1 END) AS pending_review_count
+      COUNT(CASE WHEN payment_status = 'submitted' THEN 1 END) AS pending_review_count,
+      COUNT(CASE WHEN payment_status = 'pending' THEN 1 END) AS unpaid_count
     FROM bookings
     GROUP BY booking_date, time_slot
   `).all();
@@ -480,6 +481,7 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
         used_people: r?.used_people ?? 0,
         bookings_count: r?.bookings_count ?? 0,
         pending_review_count: r?.pending_review_count ?? 0,
+        unpaid_count: r?.unpaid_count ?? 0,
         capacity: SLOT_CAPACITY,
       };
     }

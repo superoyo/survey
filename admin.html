@@ -250,17 +250,23 @@
     transition: width 0.3s;
   }
   .home-day-stats {
-    display: flex; flex-wrap: wrap; gap: 4px;
+    display: flex; flex-direction: column;
+    gap: 5px;
+    margin-top: 4px;
   }
-  .home-day-stat {
-    background: var(--brand-cream);
-    padding: 3px 10px; border-radius: 999px;
-    color: var(--muted);
-    font-size: 11px; font-weight: 700;
+  .home-day-stat-line {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px;
+    padding: 3px 0;
+    border-bottom: 1px dashed var(--border-soft);
   }
-  .home-day-stat.verified { background: #ECFDF5; color: #065F46; }
-  .home-day-stat.review   { background: #FFEDD5; color: #9A3412; }
-  .home-day-stat.muted    { color: var(--muted); }
+  .home-day-stat-line:last-child { border-bottom: 0; }
+  .home-day-stat-line .lbl { color: var(--muted); }
+  .home-day-stat-line .val {
+    font-weight: 800; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .home-day-stat-line.alert .val { color: var(--danger); }
   .home-day-pending-pill {
     position: absolute; top: 12px; right: 12px;
     background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
@@ -305,6 +311,50 @@
   }
   .banner-empty .em-icon { font-size: 36px; margin-bottom: 6px; opacity: 0.6; }
   input[type="file"].hidden-file { display: none; }
+
+  /* ─── Day stats banner (prominent on dashboard view) ───── */
+  .day-stats-banner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .day-stat-card {
+    background: #fff;
+    border: 1.5px solid var(--border-soft);
+    border-radius: 16px;
+    padding: 16px 18px;
+    box-shadow: 0 6px 16px rgba(255, 158, 145, 0.08);
+    transition: transform 0.15s;
+  }
+  .day-stat-card.alert {
+    background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+    border-color: #FBBF24;
+  }
+  .day-stat-card.danger {
+    background: linear-gradient(135deg, #FEF2F2 0%, #FECACA 100%);
+    border-color: #FCA5A5;
+  }
+  .day-stat-card .lbl {
+    font-size: 12px; color: var(--muted);
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: 0.2px;
+  }
+  .day-stat-card.alert  .lbl { color: var(--brand-gold-dark); }
+  .day-stat-card.danger .lbl { color: #991B1B; }
+  .day-stat-card .val {
+    font-size: 30px; font-weight: 800;
+    color: var(--text);
+    letter-spacing: -1px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .day-stat-card .val .unit {
+    font-size: 14px; color: var(--muted);
+    font-weight: 500;
+    margin-left: 6px;
+  }
 
   /* ─── Two-pane layout (times | bookings) ───────────────── */
   .three-pane {
@@ -654,6 +704,8 @@
         <div class="page-title" id="dashboard-title">รายละเอียดวัน</div>
         <div class="page-sub" id="dashboard-sub">10 รอบ · กดเลือกรอบเพื่อดูรายชื่อ</div>
 
+        <div class="day-stats-banner" id="day-stats-banner"></div>
+
         <div class="three-pane" id="three-pane">
 
         <!-- Pane 1: Time slots for the drilled-in day -->
@@ -917,12 +969,30 @@ function renderHomeDays() {
     card.className = 'home-day-card' + (agg.total === 0 ? ' empty' : '');
     const wd = d.getDay();
     const numClass = wd === 0 ? ' sun' : wd === 6 ? ' sat' : '';
-    const pendingPill = agg.pending > 0 ? `<div class="home-day-pending-pill">รอตรวจ ${agg.pending}</div>` : '';
-    const stats = agg.total > 0
+    const pendingPill = agg.pendingReviewCount > 0
+      ? `<div class="home-day-pending-pill">รอตรวจ ${agg.pendingReviewCount}</div>` : '';
+    const stats = agg.totalPeople > 0
       ? `
-        <span class="home-day-stat">${agg.total} คน</span>
-        ${agg.verified > 0 ? `<span class="home-day-stat verified">✓ ${agg.verified}</span>` : ''}
-        ${agg.pending  > 0 ? `<span class="home-day-stat review">⏳ ${agg.pending}</span>`  : ''}
+        <div class="home-day-stat-line">
+          <span class="lbl">ลูกค้าทั้งหมด</span>
+          <span class="val">${agg.totalPeople} คน</span>
+        </div>
+        <div class="home-day-stat-line">
+          <span class="lbl">จ่ายเงินแล้ว</span>
+          <span class="val">${agg.paidPeople} คน</span>
+        </div>
+        <div class="home-day-stat-line${agg.unpaidPeople > 0 ? ' alert' : ''}">
+          <span class="lbl">ยังไม่จ่ายเงิน</span>
+          <span class="val">${agg.unpaidPeople} คน</span>
+        </div>
+        <div class="home-day-stat-line">
+          <span class="lbl">รายการจอง</span>
+          <span class="val">${agg.totalBookings}</span>
+        </div>
+        <div class="home-day-stat-line${agg.unpaidBookings > 0 ? ' alert' : ''}">
+          <span class="lbl">ยังไม่โอนเงิน</span>
+          <span class="val">${agg.unpaidBookings}</span>
+        </div>
       `
       : `<span class="home-day-empty-msg">ยังไม่มีจอง</span>`;
     card.innerHTML = `
@@ -1012,9 +1082,36 @@ function drillIntoDay(date) {
   state.selectedTime = null;
   $('dashboard-title').textContent = fmtDateTitle(date);
   $('dashboard-sub').textContent = `${state.overview.slots.length} รอบ · กดเลือกรอบเพื่อดูรายชื่อ`;
+  renderDayStatsBanner(date);
   switchTopView('dashboard');
   renderTimes();
   loadBookings();
+}
+
+function renderDayStatsBanner(date) {
+  const a = dayAggregate(date);
+  $('day-stats-banner').innerHTML = `
+    <div class="day-stat-card">
+      <div class="lbl">ลูกค้าทั้งหมด</div>
+      <div class="val">${a.totalPeople}<span class="unit">คน</span></div>
+    </div>
+    <div class="day-stat-card">
+      <div class="lbl">ลูกค้าที่จ่ายเงินแล้ว</div>
+      <div class="val">${a.paidPeople}<span class="unit">คน</span></div>
+    </div>
+    <div class="day-stat-card${a.unpaidPeople > 0 ? ' danger' : ''}">
+      <div class="lbl">ลูกค้าที่ยังไม่จ่ายเงิน</div>
+      <div class="val">${a.unpaidPeople}<span class="unit">คน</span></div>
+    </div>
+    <div class="day-stat-card">
+      <div class="lbl">จำนวนรายการจองทั้งหมด</div>
+      <div class="val">${a.totalBookings}</div>
+    </div>
+    <div class="day-stat-card${a.unpaidBookings > 0 ? ' danger' : ''}">
+      <div class="lbl">การจองที่ยังไม่โอนเงิน</div>
+      <div class="val">${a.unpaidBookings}</div>
+    </div>
+  `;
 }
 
 $('back-to-home').onclick = () => {
@@ -1115,13 +1212,28 @@ async function loadOverview() {
 
 function dayAggregate(date) {
   const { slots, matrix } = state.overview;
-  let total = 0, verified = 0, pending = 0;
+  let totalPeople = 0, paidPeople = 0, unpaidPeople = 0;
+  let totalBookings = 0, unpaidBookings = 0;
+  let pendingReviewCount = 0;
   for (const t of slots) {
-    total    += matrix[date][t].total_people;
-    verified += matrix[date][t].verified_people;
-    pending  += matrix[date][t].pending_review_count;
+    const m = matrix[date][t];
+    totalPeople        += m.total_people;
+    paidPeople         += m.verified_people + m.pending_review_people; // ส่งสลิปแล้ว = ถือว่าจ่ายแล้ว
+    unpaidPeople       += m.unpaid_people;
+    totalBookings      += m.bookings_count;
+    unpaidBookings     += m.unpaid_count;
+    pendingReviewCount += m.pending_review_count;
   }
-  return { total, verified, pending };
+  // Legacy keys kept for the home-grid pending pill + chip counters elsewhere
+  return {
+    totalPeople, paidPeople, unpaidPeople,
+    totalBookings, unpaidBookings,
+    pendingReviewCount,
+    // legacy aliases
+    total: totalPeople,
+    verified: paidPeople,
+    pending: pendingReviewCount,
+  };
 }
 
 // ─── Time slots pane ───────────────────────────────────────
@@ -1256,6 +1368,14 @@ function fmtBookingCreatedAt(b) {
   const sameDay = d.toDateString() === new Date().toDateString();
   return sameDay ? t : `${d.getDate()}/${d.getMonth() + 1} ${t}`;
 }
+// Format a duration in minutes as "H ชั่วโมง M นาที", omitting zero parts.
+function fmtHoursMinutes(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m} นาที`;
+  if (m === 0) return `${h} ชั่วโมง`;
+  return `${h} ชั่วโมง ${m} นาที`;
+}
 
 // Filter chip click handlers
 document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -1297,20 +1417,24 @@ function renderBookingRow(b) {
   if (b.payment_status === 'verified' || b.payment_status === 'rejected' || b.payment_status === 'cancelled') {
     actions.push(`<button class="btn btn-ghost" data-action="reset">รีเซ็ต</button>`);
   }
-  // Cancel — for any non-cancelled, non-used booking. Pending bookings get
-  // "ยกเลิก จองเมื่อ HH:MM (เกิน X นาที)" so the operator can read the
-  // booking time and time-since-booked at a glance.
+  // Cancel button:
+  //  - pending: only show once past the 1-hour grace window. Label
+  //    is "ยกเลิก จองเมื่อ HH:MM (เกิน Hชม Mนาที)" where the parenthesised
+  //    overage = now - (bookingTime + 1 hour).
+  //  - other non-cancelled non-used statuses: plain "ยกเลิก".
   if (b.payment_status !== 'cancelled' && !b.used) {
-    let cancelLabel = '🚫 ยกเลิก';
     if (b.payment_status === 'pending') {
       const mins = elapsedMinutes(b);
       const when = fmtBookingCreatedAt(b);
-      if (mins !== null && when) {
-        const inside = mins >= 60 ? `เกิน ${mins} นาที` : `${mins} นาที`;
-        cancelLabel = `🚫 ยกเลิก จองเมื่อ ${when} (${inside})`;
+      if (mins !== null && mins >= 60 && when) {
+        const overage = mins - 60;
+        const cancelLabel = `🚫 ยกเลิก จองเมื่อ ${when} (เกิน ${fmtHoursMinutes(overage)})`;
+        actions.push(`<button class="btn btn-danger" data-action="cancel">${cancelLabel}</button>`);
       }
+      // else: still within grace — no cancel button
+    } else {
+      actions.push(`<button class="btn btn-danger" data-action="cancel">🚫 ยกเลิก</button>`);
     }
-    actions.push(`<button class="btn btn-danger" data-action="cancel">${cancelLabel}</button>`);
   }
   if (b.payment_status === 'pending' && !b.has_slip) {
     actions.unshift(`<span style="font-size:11px; color:var(--muted); padding: 6px 10px;">ยังไม่ส่งสลิป</span>`);
@@ -1394,7 +1518,10 @@ async function handleAction(action, booking, btn) {
 async function refreshAll() {
   await loadOverview();
   renderHomeDays();
-  if (state.selectedDate) renderTimes();
+  if (state.selectedDate) {
+    renderDayStatsBanner(state.selectedDate);
+    renderTimes();
+  }
   await loadBookings();
   if (state.searchQuery) await doSearch(state.searchQuery);
 }
