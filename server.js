@@ -446,8 +446,11 @@ app.post('/api/admin/bookings/:id/unuse', requireAdmin, (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => {
-  console.log(`Durian buffet booking server running on port ${PORT}`);
+// Explicit 0.0.0.0 — Railway proxies to IPv4, default Node binding can leave
+// the upstream unreachable from the edge (manifests as 502 fallback).
+const HOST = process.env.HOST || '0.0.0.0';
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Durian buffet booking server listening on ${HOST}:${PORT}`);
   console.log(`Admin user: ${ADMIN_USER}`);
   console.log(`Database: ${DB_PATH}`);
   console.log(`Slips dir: ${SLIPS_DIR}`);
@@ -458,4 +461,17 @@ app.listen(PORT, () => {
   if (process.env.NODE_ENV === 'production' && ADMIN_PASS === 'admin123') {
     console.warn('⚠️  ADMIN_PASS is using the default value. Set ADMIN_USER and ADMIN_PASS env vars in production.');
   }
+});
+
+server.on('error', (err) => {
+  console.error('❌ HTTP server failed to start:', err);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ unhandledRejection:', reason);
 });
