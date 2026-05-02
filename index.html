@@ -360,6 +360,30 @@
   .status-extra.reject   { border: 1.5px dashed #DC2626; }
   .status-extra.reject .lbl { color: #B91C1C; }
   .status-extra.reject .val { color: #7F1D1D; font-size: 14px; }
+  .status-extra.deadline { border: 1.5px dashed var(--brand-red); text-align: center; }
+  .status-extra.deadline .lbl { color: var(--brand-red-dark); margin-bottom: 8px; }
+  .status-extra.deadline .booked-at { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .status-extra.deadline .countdown {
+    font-size: 36px; font-weight: 800;
+    color: var(--brand-red-dark);
+    font-family: ui-monospace, "SF Mono", monospace;
+    letter-spacing: 3px;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .status-extra.deadline .countdown.warn { color: #DC2626; animation: pulse 1.5s infinite; }
+  .status-extra.deadline .timeout-msg {
+    font-size: 14px; font-weight: 700;
+    color: #7F1D1D;
+    background: #FEE2E2;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-top: 4px;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.6; }
+  }
 
   .ticket-code {
     font-family: ui-monospace, "SF Mono", monospace;
@@ -744,6 +768,15 @@ function fmtDateLong(iso) {
   const d = new Date(iso + 'T00:00:00');
   return `${d.getDate()} ${TH_MONTH_LONG[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
+// Full date+time of when the booking was created (UTC stored in DB → local view)
+function fmtCreatedAtFull(b) {
+  if (!b.created_at) return '';
+  const d = new Date(b.created_at + 'Z');
+  if (isNaN(d)) return '';
+  const date = `${d.getDate()} ${TH_MONTH_LONG[d.getMonth()]} ${d.getFullYear() + 543}`;
+  const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return `${date} เวลา ${time} น.`;
+}
 function fmtSlot(time) {
   const endHour = String(parseInt(time, 10) + 1).padStart(2, '0') + ':00';
   return `${time} - ${endHour}`;
@@ -1044,6 +1077,16 @@ function renderStatusBlock(b, container) {
       </div>`);
   }
 
+  // Pending: 60-minute payment countdown anchored to created_at
+  if (eff === 'pending' && b.created_at) {
+    parts.push(`
+      <div class="status-extra deadline">
+        <div class="booked-at">📅 จองเมื่อ ${fmtCreatedAtFull(b)}</div>
+        <div class="lbl">โปรดชำระเงินภายใน</div>
+        <div class="countdown" id="payment-countdown">--:--</div>
+      </div>`);
+  }
+
   // Rejection or cancellation reason — same field, different label
   if (b.payment_status === 'rejected' || b.payment_status === 'cancelled') {
     const isCancel = b.payment_status === 'cancelled';
@@ -1061,6 +1104,40 @@ function renderStatusBlock(b, container) {
       <div class="desc">${desc}</div>
       ${parts.join('')}
     </div>`;
+
+  // Kick off the payment countdown after the DOM exists
+  stopPaymentCountdown();
+  if (eff === 'pending' && b.created_at) startPaymentCountdown(b);
+}
+
+// ─── Pending booking 60-minute countdown ──────────────────
+let paymentCountdownTimer = null;
+function stopPaymentCountdown() {
+  if (paymentCountdownTimer) {
+    clearInterval(paymentCountdownTimer);
+    paymentCountdownTimer = null;
+  }
+}
+function startPaymentCountdown(b) {
+  const created = new Date(b.created_at + 'Z');
+  if (isNaN(created)) return;
+  const deadline = created.getTime() + 60 * 60 * 1000; // 60 min
+  function tick() {
+    const el = document.getElementById('payment-countdown');
+    if (!el) { stopPaymentCountdown(); return; }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      el.outerHTML = `<div class="timeout-msg">⚠️ การจองนี้ไม่ได้ชำระเงินในเวลาที่กำหนด</div>`;
+      stopPaymentCountdown();
+      return;
+    }
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    el.textContent = `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+    el.classList.toggle('warn', remaining < 10 * 60 * 1000); // pulse when < 10 min
+  }
+  tick();
+  paymentCountdownTimer = setInterval(tick, 1000);
 }
 
 function renderSummaryRows(b, container) {
