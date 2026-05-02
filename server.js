@@ -38,6 +38,26 @@ const TIME_SLOTS = [
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+function getSetting(key, defaultValue = '') {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : defaultValue;
+}
+function setSetting(key, value) {
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, value);
+}
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS bookings (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     code            TEXT NOT NULL UNIQUE,
@@ -158,6 +178,31 @@ function unlinkSlip(filename) {
   try { fs.unlinkSync(path.join(SLIPS_DIR, filename)); } catch {}
 }
 
+// ─── Payment image (single file at DATA_DIR/payment.<ext>) ─────────────
+const PAYMENT_EXTS = ['jpg', 'jpeg', 'png', 'webp'];
+function findPaymentImage() {
+  for (const ext of PAYMENT_EXTS) {
+    const p = path.join(DATA_DIR, `payment.${ext}`);
+    if (fs.existsSync(p)) return { path: p, ext };
+  }
+  return null;
+}
+const paymentUpload = multer({
+  storage: multer.diskStorage({
+    destination: DATA_DIR,
+    filename: (req, file, cb) => {
+      const raw = (path.extname(file.originalname) || '.jpg').toLowerCase().slice(1).replace(/[^a-z0-9]/g, '');
+      const safe = PAYMENT_EXTS.includes(raw) ? raw : 'jpg';
+      cb(null, `payment.${safe}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpe?g|png|webp)$/i.test(file.mimetype);
+    cb(ok ? null : new Error('invalid_type'), ok);
+  },
+});
+
 // ─── Banner image (single file at DATA_DIR/banner.<ext>) ────────────────
 const BANNER_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
 function findBanner() {
@@ -250,6 +295,65 @@ app.post('/api/admin/banner', requireAdmin, (req, res, next) => {
     size: stat.size,
     uploaded_at: stat.mtime.toISOString(),
   });
+});
+
+// ─── Payment settings (public read, admin write) ────────────────────────
+app.get('/api/payment-info', (req, res) => {
+  const found = findPaymentImage();
+  res.json({
+    top_text: getSetting('payment_top_text', ''),
+    has_image: !!found,
+    image_uploaded_at: found ? fs.statSync(found.path).mtime.toISOString() : null,
+  });
+});
+
+app.get('/payment-image', (req, res) => {
+  const found = findPaymentImage();
+  if (!found) return res.status(404).end();
+  res.set('Cache-Control', 'public, max-age=60');
+  res.sendFile(found.path);
+});
+
+app.post('/api/admin/payment-settings', requireAdmin, (req, res, next) => {
+  paymentUpload.single('image')(req, res, (err) => {
+    if (err) {
+      if (err.message === 'invalid_type') return res.status(400).json({ error: 'invalid_type', message: 'รองรับเฉพาะรูปภาพ JPG/PNG/WEBP' });
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'too_large', message: 'ไฟล์ใหญ่เกิน 10MB' });
+      return res.status(400).json({ error: 'upload_failed', message: err.message });
+    }
+    next();
+  });
+}, (req, res) => {
+  const topText = String(req.body.top_text || '').trim();
+  setSetting('payment_top_text', topText);
+
+  if (req.file) {
+    // Drop other-extension files so only the new one remains
+    for (const ext of PAYMENT_EXTS) {
+      const p = path.join(DATA_DIR, `payment.${ext}`);
+      if (p !== req.file.path && fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch {}
+      }
+    }
+  }
+
+  const found = findPaymentImage();
+  res.json({
+    top_text: topText,
+    has_image: !!found,
+    image_uploaded_at: found ? fs.statSync(found.path).mtime.toISOString() : null,
+  });
+});
+
+app.delete('/api/admin/payment-image', requireAdmin, (req, res) => {
+  let removed = 0;
+  for (const ext of PAYMENT_EXTS) {
+    const p = path.join(DATA_DIR, `payment.${ext}`);
+    if (fs.existsSync(p)) {
+      try { fs.unlinkSync(p); removed++; } catch {}
+    }
+  }
+  res.json({ removed });
 });
 
 app.delete('/api/admin/banner', requireAdmin, (req, res) => {

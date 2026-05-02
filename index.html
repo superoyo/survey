@@ -252,6 +252,26 @@
     position: relative;
   }
   .pay-bank { font-size: 16px; font-weight: 800; color: var(--brand-gold-dark); margin-bottom: 12px; letter-spacing: 0.2px; }
+  .pay-top-text {
+    background: rgba(255,255,255,0.7);
+    border: 1px dashed var(--brand-gold-deep);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--brand-red-dark);
+    text-align: center;
+    margin-bottom: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  .pay-image {
+    display: block;
+    max-width: 100%;
+    border-radius: 12px;
+    background: #fff;
+    margin: 0 auto 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  }
   .pay-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 6px 0; font-size: 14px; gap: 12px;
@@ -651,9 +671,13 @@
         <div class="pay-deadline">⏰ <b>กรุณาโอนภายใน 1 ชั่วโมง</b> — หากเกินเวลา ทางร้านสงวนสิทธิ์ในการยกเลิกการจอง</div>
 
         <div class="pay-box">
-          <div class="pay-bank" id="pay-bank">ธนาคาร...</div>
-          <div class="pay-row"><span class="l">ชื่อบัญชี</span><span class="v" id="pay-name">-</span></div>
-          <div class="pay-row"><span class="l">เลขที่บัญชี</span><span class="v" id="pay-no">-</span></div>
+          <div class="pay-top-text" id="pay-top-text" style="display:none;"></div>
+          <img class="pay-image" id="pay-image" style="display:none;" alt="ข้อมูลการชำระเงิน" />
+          <div id="pay-bank-section">
+            <div class="pay-bank" id="pay-bank">ธนาคาร...</div>
+            <div class="pay-row"><span class="l">ชื่อบัญชี</span><span class="v" id="pay-name">-</span></div>
+            <div class="pay-row"><span class="l">เลขที่บัญชี</span><span class="v" id="pay-no">-</span></div>
+          </div>
           <div class="pay-amount">
             <span class="l">ยอดที่ต้องชำระ</span>
             <span class="v" id="pay-total">฿0</span>
@@ -721,9 +745,13 @@
 
         <div id="lk-pay-section" style="display:none;">
           <div class="pay-box" style="margin-top:8px;">
-            <div class="pay-bank" id="lk-pay-bank">ธนาคาร...</div>
-            <div class="pay-row"><span class="l">ชื่อบัญชี</span><span class="v" id="lk-pay-name">-</span></div>
-            <div class="pay-row"><span class="l">เลขที่บัญชี</span><span class="v" id="lk-pay-no">-</span></div>
+            <div class="pay-top-text" id="lk-pay-top-text" style="display:none;"></div>
+            <img class="pay-image" id="lk-pay-image" style="display:none;" alt="ข้อมูลการชำระเงิน" />
+            <div id="lk-pay-bank-section">
+              <div class="pay-bank" id="lk-pay-bank">ธนาคาร...</div>
+              <div class="pay-row"><span class="l">ชื่อบัญชี</span><span class="v" id="lk-pay-name">-</span></div>
+              <div class="pay-row"><span class="l">เลขที่บัญชี</span><span class="v" id="lk-pay-no">-</span></div>
+            </div>
             <div class="pay-amount">
               <span class="l">ยอดที่ต้องชำระ</span>
               <span class="v" id="lk-pay-total">฿0</span>
@@ -1026,14 +1054,57 @@ $('booking-form').onsubmit = async (e) => {
 };
 
 // ─── Step 5: payment + slip ────────────────────────────────
+// Cache the admin-uploaded payment image meta so we don't refetch every render
+let _paymentInfoCache = null;
+async function getPaymentInfo() {
+  if (_paymentInfoCache) return _paymentInfoCache;
+  try {
+    const res = await fetch('/api/payment-info');
+    _paymentInfoCache = await res.json();
+  } catch {
+    _paymentInfoCache = { has_image: false, top_text: '' };
+  }
+  return _paymentInfoCache;
+}
+
 function renderPayBox(b) {
   const bank = state.config.bank;
   const total = bank.price_per_person * b.num_people;
-  $('pay-bank').textContent = bank.bank;
-  $('pay-name').textContent = bank.account_name;
-  $('pay-no').textContent = bank.account_number;
   $('pay-total').textContent = fmtBaht(total);
   $('pay-breakdown').textContent = `${b.num_people} คน × ${fmtBaht(bank.price_per_person)}/คน`;
+  applyPaymentDisplay({
+    topTextEl: $('pay-top-text'),
+    imageEl:   $('pay-image'),
+    bankWrap:  $('pay-bank-section'),
+    bankEl:    $('pay-bank'),
+    nameEl:    $('pay-name'),
+    noEl:      $('pay-no'),
+    bank,
+  });
+}
+
+async function applyPaymentDisplay(els) {
+  const info = await getPaymentInfo();
+  if (info.has_image) {
+    // Custom image mode — hide bank rows, show image (+ optional text)
+    els.imageEl.src = '/payment-image?v=' + encodeURIComponent(info.image_uploaded_at || Date.now());
+    els.imageEl.style.display = 'block';
+    if (info.top_text) {
+      els.topTextEl.textContent = info.top_text;
+      els.topTextEl.style.display = 'block';
+    } else {
+      els.topTextEl.style.display = 'none';
+    }
+    els.bankWrap.style.display = 'none';
+  } else {
+    // Fallback — bank rows
+    els.topTextEl.style.display = 'none';
+    els.imageEl.style.display = 'none';
+    els.bankWrap.style.display = 'block';
+    els.bankEl.textContent = els.bank.bank;
+    els.nameEl.textContent = els.bank.account_name;
+    els.noEl.textContent   = els.bank.account_number;
+  }
 }
 
 function wireFilePicker(inputId, labelId, previewId, onPick) {
@@ -1314,10 +1385,16 @@ function renderLkDetail() {
   } else {
     paySection.style.display = 'block';
     const bank = state.config.bank;
-    $('lk-pay-bank').textContent = bank.bank;
-    $('lk-pay-name').textContent = bank.account_name;
-    $('lk-pay-no').textContent = bank.account_number;
     $('lk-pay-total').textContent = fmtBaht(bank.price_per_person * b.num_people);
+    applyPaymentDisplay({
+      topTextEl: $('lk-pay-top-text'),
+      imageEl:   $('lk-pay-image'),
+      bankWrap:  $('lk-pay-bank-section'),
+      bankEl:    $('lk-pay-bank'),
+      nameEl:    $('lk-pay-name'),
+      noEl:      $('lk-pay-no'),
+      bank,
+    });
     $('lk-slip').value = '';
     $('lk-slip-preview').style.display = 'none';
     $('lk-upload-label').classList.remove('has-file');

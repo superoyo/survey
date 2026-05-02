@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>หลังบ้าน — สถานีทุเรียนไอยรา</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.css" />
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -279,6 +280,63 @@
     font-size: 12px; color: var(--muted);
     font-style: italic;
   }
+
+  /* ─── Payment settings ─────────────────────────────────── */
+  .settings-card {
+    background: #fff;
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 22px;
+    margin-bottom: 14px;
+    box-shadow: 0 6px 18px rgba(255, 158, 145, 0.08);
+  }
+  .settings-card .field { margin-bottom: 18px; }
+  .settings-card textarea {
+    min-height: 80px;
+    resize: vertical;
+    font-family: inherit;
+  }
+  .file-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cropper-wrap {
+    background: var(--brand-cream);
+    border: 1.5px dashed var(--brand-red);
+    border-radius: 14px;
+    padding: 14px;
+    margin-top: 10px;
+  }
+  .cropper-frame {
+    max-height: 420px;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .cropper-frame img { display: block; max-width: 100%; }
+  .cropper-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+  .payment-current-wrap {
+    background: var(--brand-cream);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    padding: 14px;
+    margin-top: 8px;
+  }
+  .payment-current-wrap .head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .payment-preview {
+    max-width: 100%; max-height: 420px;
+    display: block;
+    border-radius: 10px;
+    background: #fff;
+    margin: 0 auto;
+  }
+  .payment-current-wrap.pending-save {
+    border-color: var(--brand-red);
+    background: linear-gradient(135deg, #FFE4D6 0%, #FED7C5 100%);
+  }
+  .payment-current-wrap.pending-save .head { color: var(--brand-red-dark); font-weight: 700; }
 
   /* ─── Banner card ──────────────────────────────────────── */
   .banner-card {
@@ -748,6 +806,7 @@
       </div>
       <div class="topbar-nav">
         <button class="nav-link active" data-view="home">หน้าหลัก</button>
+        <button class="nav-link" data-view="payment">ตั้งค่าการชำระเงิน</button>
         <button class="nav-link" data-view="banner">Banner Upload</button>
       </div>
       <button class="logout" id="logout-btn">ออกจากระบบ</button>
@@ -846,6 +905,56 @@
         </div><!-- /.three-pane -->
       </div><!-- /#view-dashboard -->
 
+      <!-- ─── Payment Settings view ──────────────────────── -->
+      <div id="view-payment" style="display:none;">
+        <div class="page-title">ตั้งค่าการชำระเงิน</div>
+        <div class="page-sub">กำหนดข้อความและรูปภาพ (เช่น QR Code) ที่ลูกค้าจะเห็นในขั้นตอนชำระเงิน</div>
+
+        <div class="settings-card">
+          <div class="field">
+            <label for="payment-top-text">ข้อความด้านบนรูปภาพ</label>
+            <textarea id="payment-top-text" rows="3" placeholder="เช่น สแกน QR เพื่อชำระเงินผ่านธนาคารกรุงเทพ"></textarea>
+            <div style="font-size:11px; color:var(--muted); margin-top:4px;">เว้นว่างได้ ถ้าไม่ต้องการแสดงข้อความ</div>
+          </div>
+
+          <div class="field">
+            <label>รูปภาพการชำระเงิน (เช่น QR Code)</label>
+            <div class="file-row">
+              <input type="file" id="payment-image-input" class="hidden-file" accept="image/*" />
+              <button type="button" class="btn btn-info" id="payment-pick-btn">📤 เลือกรูปภาพ</button>
+              <button type="button" class="btn btn-danger" id="payment-remove-btn" style="display:none;">🗑 ลบรูป</button>
+              <span style="font-size:11px; color:var(--muted);">JPG / PNG / WEBP ไม่เกิน 10MB</span>
+            </div>
+
+            <div class="cropper-wrap" id="cropper-wrap" style="display:none;">
+              <div style="font-size:12px; color:var(--brand-red-dark); font-weight:700; margin-bottom:8px;">
+                ✂️ ครอปรูปให้ได้ขนาดที่ต้องการ แล้วกด "ใช้ภาพนี้"
+              </div>
+              <div class="cropper-frame">
+                <img id="cropper-img" alt="cropper" />
+              </div>
+              <div class="cropper-actions">
+                <button type="button" class="btn btn-ghost" id="cropper-cancel">ยกเลิก</button>
+                <button type="button" class="btn btn-accent" id="cropper-apply">✓ ใช้ภาพนี้</button>
+              </div>
+            </div>
+
+            <div class="payment-current-wrap" id="payment-current-wrap" style="display:none;">
+              <div class="head">
+                <span id="payment-current-label">รูปภาพปัจจุบัน:</span>
+                <span id="payment-current-meta"></span>
+              </div>
+              <img id="payment-current-preview" class="payment-preview" alt="payment" />
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button class="btn btn-primary" id="payment-save-btn" style="width:auto; padding:14px 28px;">💾 บันทึกการตั้งค่า</button>
+          <span id="payment-save-status" style="font-size:13px; color:var(--accent); align-self:center; display:none;">✓ บันทึกแล้ว</span>
+        </div>
+      </div>
+
       <!-- ─── Banner Upload view ─────────────────────────── -->
       <div id="view-banner" style="display:none;">
         <div class="page-title">Banner Upload</div>
@@ -915,6 +1024,7 @@
     </div>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.js"></script>
 <script>
 const TH_MONTH_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TH_MONTH_LONG  = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -1011,10 +1121,12 @@ function switchTopView(name) {
   $('view-home').style.display      = name === 'home'      ? 'block' : 'none';
   $('view-dashboard').style.display = name === 'dashboard' ? 'block' : 'none';
   $('view-banner').style.display    = name === 'banner'    ? 'block' : 'none';
+  $('view-payment').style.display   = name === 'payment'   ? 'block' : 'none';
   document.querySelectorAll('.nav-link').forEach(b => {
     const v = b.dataset.view;
-    if (v === 'home')   b.classList.toggle('active', name === 'home' || name === 'dashboard');
-    if (v === 'banner') b.classList.toggle('active', name === 'banner');
+    if (v === 'home')    b.classList.toggle('active', name === 'home' || name === 'dashboard');
+    if (v === 'banner')  b.classList.toggle('active', name === 'banner');
+    if (v === 'payment') b.classList.toggle('active', name === 'payment');
   });
 }
 document.querySelectorAll('.nav-link').forEach(btn => {
@@ -1026,7 +1138,8 @@ document.querySelectorAll('.nav-link').forEach(btn => {
       state.selectedTime = null;
       renderHomeDays();
     }
-    if (target === 'banner') loadBannerStatus();
+    if (target === 'banner')  loadBannerStatus();
+    if (target === 'payment') loadPaymentSettings();
   };
 });
 
@@ -1261,6 +1374,121 @@ $('banner-remove-btn').onclick = async () => {
   if (!confirm('ลบ banner ปัจจุบัน? หน้าจองจะกลับไปแสดง fallback')) return;
   await api('DELETE', '/api/admin/banner');
   await loadBannerStatus();
+};
+
+// ─── Payment settings (text + cropped QR image) ──────────
+let cropperInstance = null;
+let pendingPaymentBlob = null;
+
+async function loadPaymentSettings() {
+  try {
+    const res = await fetch('/api/payment-info');
+    const info = await res.json();
+    $('payment-top-text').value = info.top_text || '';
+    pendingPaymentBlob = null;
+    if (info.has_image) {
+      $('payment-current-preview').src = '/payment-image?v=' + encodeURIComponent(info.image_uploaded_at);
+      $('payment-current-wrap').style.display = 'block';
+      $('payment-current-wrap').classList.remove('pending-save');
+      $('payment-current-label').textContent = 'รูปภาพปัจจุบัน:';
+      $('payment-current-meta').textContent = `อัปเดต ${new Date(info.image_uploaded_at).toLocaleString('th-TH', {dateStyle:'short', timeStyle:'short'})}`;
+      $('payment-remove-btn').style.display = 'inline-flex';
+    } else {
+      $('payment-current-wrap').style.display = 'none';
+      $('payment-remove-btn').style.display = 'none';
+    }
+    $('payment-save-status').style.display = 'none';
+  } catch {
+    alert('โหลดการตั้งค่าไม่สำเร็จ');
+  }
+}
+
+$('payment-pick-btn').onclick = () => $('payment-image-input').click();
+
+$('payment-image-input').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type))    { alert('กรุณาเลือกไฟล์รูปภาพ'); return; }
+  if (file.size > 10 * 1024 * 1024)   { alert('ไฟล์ใหญ่เกิน 10MB'); return; }
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    $('cropper-img').src = ev.target.result;
+    $('cropper-wrap').style.display = 'block';
+    if (cropperInstance) cropperInstance.destroy();
+    cropperInstance = new Cropper($('cropper-img'), {
+      viewMode: 1,
+      autoCropArea: 1,
+      aspectRatio: NaN, // free aspect — operator picks the crop they want
+      background: false,
+      movable: true,
+      zoomable: true,
+      rotatable: false,
+    });
+  };
+  reader.readAsDataURL(file);
+};
+
+$('cropper-cancel').onclick = () => {
+  $('cropper-wrap').style.display = 'none';
+  if (cropperInstance) { cropperInstance.destroy(); cropperInstance = null; }
+  $('payment-image-input').value = '';
+};
+
+$('cropper-apply').onclick = () => {
+  if (!cropperInstance) return;
+  cropperInstance.getCroppedCanvas({
+    maxWidth: 1200,
+    maxHeight: 1600,
+    imageSmoothingQuality: 'high',
+  }).toBlob((blob) => {
+    if (!blob) { alert('ครอปไม่สำเร็จ'); return; }
+    pendingPaymentBlob = blob;
+    const url = URL.createObjectURL(blob);
+    $('payment-current-preview').src = url;
+    $('payment-current-wrap').style.display = 'block';
+    $('payment-current-wrap').classList.add('pending-save');
+    $('payment-current-label').textContent = '⏳ รูปใหม่ (ยังไม่ได้บันทึก):';
+    $('payment-current-meta').textContent = '';
+    $('cropper-wrap').style.display = 'none';
+    if (cropperInstance) { cropperInstance.destroy(); cropperInstance = null; }
+    $('payment-image-input').value = '';
+  }, 'image/jpeg', 0.92);
+};
+
+$('payment-save-btn').onclick = async () => {
+  const fd = new FormData();
+  fd.append('top_text', $('payment-top-text').value);
+  if (pendingPaymentBlob) fd.append('image', pendingPaymentBlob, 'payment.jpg');
+
+  const btn = $('payment-save-btn');
+  btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก...';
+  $('payment-save-status').style.display = 'none';
+  try {
+    const res = await fetch('/api/admin/payment-settings', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.message || 'บันทึกไม่สำเร็จ');
+      return;
+    }
+    await loadPaymentSettings();
+    $('payment-save-status').style.display = 'inline';
+    setTimeout(() => $('payment-save-status').style.display = 'none', 2500);
+  } catch {
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 บันทึกการตั้งค่า';
+  }
+};
+
+$('payment-remove-btn').onclick = async () => {
+  if (!confirm('ลบรูปการชำระเงิน? ลูกค้าจะกลับไปเห็นข้อมูลธนาคารแบบเดิม')) return;
+  await api('DELETE', '/api/admin/payment-image');
+  await loadPaymentSettings();
 };
 
 // ─── Date helpers ──────────────────────────────────────────
