@@ -385,7 +385,9 @@
     display: flex; align-items: center; justify-content: center;
     transition: all 0.15s;
   }
-  .icon-btn:hover { background: var(--brand-peach); transform: rotate(60deg); }
+  .icon-btn:hover { background: var(--brand-peach); }
+  #bookings-refresh:hover { transform: rotate(180deg); }
+  .icon-btn-group { display: flex; gap: 6px; align-items: center; }
 
   /* Time slot items (left pane in dashboard) */
   .time-item {
@@ -405,6 +407,14 @@
   .time-item-row { display: flex; justify-content: space-between; align-items: baseline; }
   .time-item-time { font-weight: 800; font-size: 14px; color: var(--text); }
   .time-item-count { font-size: 11px; color: var(--muted); font-weight: 700; }
+  .time-item-full-badge {
+    background: linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 100%);
+    color: #fff;
+    font-size: 11px; font-weight: 800;
+    padding: 2px 10px; border-radius: 999px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 6px rgba(255, 122, 109, 0.35);
+  }
   .time-item-bar {
     height: 4px; background: var(--border-soft); border-radius: 999px;
     margin-top: 6px; overflow: hidden;
@@ -787,7 +797,10 @@
               <div class="pane-title" id="bookings-title">รายชื่อล่าสุด</div>
               <div class="pane-sub" id="bookings-sub">เรียงจากการจองล่าสุด</div>
             </div>
-            <button class="icon-btn" id="bookings-refresh" title="โหลดใหม่">↻</button>
+            <div class="icon-btn-group">
+              <button class="icon-btn" id="bookings-export" title="Export CSV" style="font-size:14px;">📥</button>
+              <button class="icon-btn" id="bookings-refresh" title="โหลดใหม่">↻</button>
+            </div>
           </div>
 
           <div class="filter-chips" id="filter-chips">
@@ -1346,11 +1359,15 @@ function renderTimes() {
         </div>
       </div>
     ` : '';
+    const isFull = m.total_people >= capacity;
+    const countDisplay = isFull
+      ? `<div class="time-item-full-badge">เต็ม</div>`
+      : `<div class="time-item-count">${m.total_people}/${capacity}</div>`;
     item.innerHTML = `
       ${pendingPill}
       <div class="time-item-row">
         <div class="time-item-time">${fmtSlot(time)}</div>
-        <div class="time-item-count">${m.total_people}/${capacity}</div>
+        ${countDisplay}
       </div>
       <div class="time-item-bar"><div class="time-item-bar-fill" style="width:${pct}%"></div></div>
       ${statsHtml}
@@ -1574,6 +1591,79 @@ $('bookings-refresh').onclick = async () => {
   await loadOverview();
   if (state.selectedDate) renderTimes();
   await loadBookings();
+};
+
+// ─── CSV export ───────────────────────────────────────────
+function csvEscape(value) {
+  const s = String(value ?? '');
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function bookingsToCsv(bookings) {
+  const headers = [
+    '#', 'รหัสตั๋ว', 'ชื่อ-นามสกุล', 'เบอร์โทร', 'อีเมล',
+    'จำนวนคน', 'วันที่จอง', 'รอบเวลา',
+    'สถานะการชำระเงิน', 'ใช้สิทธิ์',
+    'ส่งสลิปเมื่อ', 'ยืนยันเมื่อ', 'ใช้สิทธิ์เมื่อ',
+    'ย้ายมาจากวัน', 'ย้ายมาจากรอบ',
+    'เหตุผลปฏิเสธ/ยกเลิก',
+    'วันที่จอง (timestamp)',
+  ];
+  const STATUS_TH = STATUS_LABEL; // map already defined
+  const rows = bookings.map((b, i) => [
+    i + 1,
+    b.code || '',
+    b.name,
+    b.phone,
+    b.email || '',
+    b.num_people,
+    b.booking_date,
+    fmtSlot(b.time_slot),
+    STATUS_TH[b.payment_status] || b.payment_status,
+    b.used ? 'ใช้สิทธิ์แล้ว' : '',
+    b.slip_uploaded_at || '',
+    b.verified_at || '',
+    b.used_at || '',
+    b.original_date || '',
+    b.original_time ? fmtSlot(b.original_time) : '',
+    b.rejected_reason || '',
+    b.created_at || '',
+  ]);
+  return [headers, ...rows]
+    .map(row => row.map(csvEscape).join(','))
+    .join('\r\n');
+}
+function downloadCsv(filename, csv) {
+  // BOM ﻿ makes Excel read UTF-8 (Thai) correctly
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+$('bookings-export').onclick = () => {
+  // Apply the same active filter to keep CSV in sync with what's visible
+  const FILTERS = {
+    all:       _ => true,
+    submitted: b => b.payment_status === 'submitted',
+    verified:  b => b.payment_status === 'verified' && !b.used,
+    pending:   b => b.payment_status === 'pending',
+  };
+  const filtered = state.bookings.filter(FILTERS[state.bookingFilter] || FILTERS.all);
+  if (!filtered.length) { alert('ไม่มีข้อมูลให้ export'); return; }
+
+  // Filename: bookings-YYYY-MM-DD-HHMM.csv (with date/time/filter context)
+  let name = 'bookings';
+  if (state.selectedDate) name += `-${state.selectedDate}`;
+  if (state.selectedTime) name += `-${state.selectedTime.replace(':', '')}`;
+  if (state.bookingFilter !== 'all') name += `-${state.bookingFilter}`;
+  name += '.csv';
+
+  downloadCsv(name, bookingsToCsv(filtered));
 };
 
 // ─── Booking actions ──────────────────────────────────────
