@@ -530,12 +530,14 @@ app.post('/api/booking', (req, res) => {
   const phoneClean = String(phone).trim();
 
   const tx = db.transaction(() => {
-    // One phone = one active booking. Cancelled bookings don't count
-    // (so the customer can re-book after admin cancels).
+    // One phone = one booking per day. Cancelled bookings don't count
+    // (so the customer can re-book after admin cancels). Different days
+    // are allowed — same phone can book May 15 AND May 16 separately.
     const dup = db.prepare(`
       SELECT id, booking_date, time_slot, payment_status
-      FROM bookings WHERE phone = ? AND payment_status != 'cancelled'
-    `).get(phoneClean);
+      FROM bookings
+      WHERE phone = ? AND booking_date = ? AND payment_status != 'cancelled'
+    `).get(phoneClean, booking_date);
     if (dup) {
       const err = new Error('phone_exists');
       err.code = 'PHONE_EXISTS';
@@ -585,14 +587,29 @@ app.post('/api/booking', (req, res) => {
   }
 });
 
-// Realtime check used by the booking form to flag a phone before submit
+// Realtime check used by the booking form to flag a phone before submit.
+// If `date` is provided, only the per-day uniqueness rule is checked
+// (same phone may book different days). Without date, returns the most
+// recent active booking for the phone (used by lookups elsewhere).
 app.get('/api/booking/check', (req, res) => {
   const phone = String(req.query.phone || '').trim();
+  const date  = String(req.query.date  || '').trim();
   if (!/^[0-9\-+\s()]{9,15}$/.test(phone)) return res.json({ exists: false });
-  const row = db.prepare(`
-    SELECT booking_date, time_slot, payment_status
-    FROM bookings WHERE phone = ? AND payment_status != 'cancelled'
-  `).get(phone);
+
+  let row;
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    row = db.prepare(`
+      SELECT booking_date, time_slot, payment_status
+      FROM bookings
+      WHERE phone = ? AND booking_date = ? AND payment_status != 'cancelled'
+    `).get(phone, date);
+  } else {
+    row = db.prepare(`
+      SELECT booking_date, time_slot, payment_status
+      FROM bookings WHERE phone = ? AND payment_status != 'cancelled'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(phone);
+  }
   if (!row) return res.json({ exists: false });
   res.json({
     exists: true,
