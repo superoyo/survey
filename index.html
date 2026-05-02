@@ -1424,7 +1424,11 @@ $('lk-upload-slip').onclick = async () => {
     const idx = state.lkBookings.findIndex(x => x.id === data.id);
     if (idx >= 0) state.lkBookings[idx] = data;
     renderLkDetail();
-    showAlert('ส่งสลิปเรียบร้อย รอการตรวจสอบ', 'success');
+    showAlert('ส่งสลิปเรียบร้อยแล้ว รอการตรวจสอบ', 'success');
+    // Bring the success banner into view — the upload button sits low
+    // on the page after rendering, so the toast at the top is otherwise
+    // off-screen.
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch {
     showAlert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
   } finally {
