@@ -452,6 +452,49 @@
   }
   .booking-card-title { font-weight: 800; font-size: 15px; color: var(--text); }
   .booking-card-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  /* Compact countdown row inside list cards */
+  .card-countdown-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; flex-wrap: wrap;
+    margin-top: 10px; padding: 8px 12px;
+    background: rgba(255, 122, 109, 0.08);
+    border: 1px dashed var(--brand-red);
+    border-radius: 12px;
+    font-size: 13px; color: var(--brand-red-dark);
+    font-weight: 700;
+  }
+  .card-countdown-row .countdown {
+    font-size: 18px;
+    font-family: ui-monospace, "SF Mono", monospace;
+    letter-spacing: 1.5px;
+    color: var(--brand-red-dark);
+    font-weight: 800;
+  }
+  .card-countdown-row .countdown.warn { color: #DC2626; animation: pulse 1.5s infinite; }
+
+  /* Card CTA chip — shows that the card is clickable */
+  .card-cta {
+    display: block;
+    padding: 10px 14px; margin-top: 10px;
+    background: linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 100%);
+    color: #fff;
+    border-radius: 12px;
+    font-size: 13px; font-weight: 700;
+    text-align: center;
+    box-shadow: 0 4px 10px rgba(255, 122, 109, 0.25);
+    transition: all 0.15s;
+  }
+  .card-cta.secondary {
+    background: var(--brand-cream);
+    color: var(--brand-red-dark);
+    border: 1.5px solid var(--border-soft);
+    box-shadow: none;
+  }
+  .booking-card:hover .card-cta:not(.secondary) {
+    box-shadow: 0 6px 16px rgba(255, 122, 109, 0.4);
+  }
+
   .badge {
     display: inline-block; padding: 4px 11px;
     border-radius: 999px; font-size: 11px; font-weight: 700;
@@ -1083,7 +1126,7 @@ function renderStatusBlock(b, container) {
       <div class="status-extra deadline">
         <div class="booked-at">📅 จองเมื่อ ${fmtCreatedAtFull(b)}</div>
         <div class="lbl">โปรดชำระเงินภายใน</div>
-        <div class="countdown" id="payment-countdown">--:--</div>
+        <div class="countdown" data-countdown-from="${escapeHtml(b.created_at)}">--:--</div>
       </div>`);
   }
 
@@ -1105,39 +1148,36 @@ function renderStatusBlock(b, container) {
       ${parts.join('')}
     </div>`;
 
-  // Kick off the payment countdown after the DOM exists
-  stopPaymentCountdown();
-  if (eff === 'pending' && b.created_at) startPaymentCountdown(b);
+  // Refresh all live countdowns (detail card + any list cards)
+  startAllCountdowns();
 }
 
-// ─── Pending booking 60-minute countdown ──────────────────
-let paymentCountdownTimer = null;
-function stopPaymentCountdown() {
-  if (paymentCountdownTimer) {
-    clearInterval(paymentCountdownTimer);
-    paymentCountdownTimer = null;
-  }
+// ─── 60-minute payment countdowns (multi-instance via data attributes) ──
+let countdownTimer = null;
+function stopAllCountdowns() {
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 }
-function startPaymentCountdown(b) {
-  const created = new Date(b.created_at + 'Z');
-  if (isNaN(created)) return;
-  const deadline = created.getTime() + 60 * 60 * 1000; // 60 min
+function startAllCountdowns() {
+  stopAllCountdowns();
   function tick() {
-    const el = document.getElementById('payment-countdown');
-    if (!el) { stopPaymentCountdown(); return; }
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      el.outerHTML = `<div class="timeout-msg">⚠️ การจองนี้ไม่ได้ชำระเงินในเวลาที่กำหนด</div>`;
-      stopPaymentCountdown();
-      return;
-    }
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-    el.textContent = `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
-    el.classList.toggle('warn', remaining < 10 * 60 * 1000); // pulse when < 10 min
+    const elements = document.querySelectorAll('[data-countdown-from]');
+    if (!elements.length) { stopAllCountdowns(); return; }
+    elements.forEach(el => {
+      const created = new Date(el.dataset.countdownFrom + 'Z');
+      if (isNaN(created)) return;
+      const remaining = created.getTime() + 60 * 60 * 1000 - Date.now();
+      if (remaining <= 0) {
+        el.outerHTML = `<div class="timeout-msg">⚠️ การจองนี้ไม่ได้ชำระเงินในเวลาที่กำหนด</div>`;
+        return;
+      }
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      el.textContent = `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+      el.classList.toggle('warn', remaining < 10 * 60 * 1000);
+    });
   }
   tick();
-  paymentCountdownTimer = setInterval(tick, 1000);
+  countdownTimer = setInterval(tick, 1000);
 }
 
 function renderSummaryRows(b, container) {
@@ -1205,12 +1245,34 @@ $('lookup-form').onsubmit = async (e) => {
 function renderLkList() {
   const root = $('lk-bookings');
   root.innerHTML = '';
+
+  // CTA copy by effective status — pending gets the upload-slip prompt;
+  // others land on a softer "see details" call.
+  const CTA_PRIMARY = {
+    pending:   '📤 คลิกเพื่ออัพโหลดสลิปโอน',
+    rejected:  '📤 คลิกเพื่ออัพโหลดสลิปใหม่',
+    submitted: 'คลิกเพื่อดูสถานะการตรวจสอบ',
+    verified:  '🎫 คลิกเพื่อดูรหัสตั๋ว',
+    used:      'คลิกเพื่อดูรายละเอียด',
+    cancelled: 'คลิกเพื่อดูรายละเอียด',
+  };
+  const CTA_SECONDARY_STATUSES = new Set(['submitted', 'verified', 'used', 'cancelled']);
+
   for (const b of state.lkBookings) {
     const eff = effectiveStatus(b);
     const s = STATUS_LABEL[eff] || STATUS_LABEL.pending;
     const transferTag = b.original_date
       ? `<span class="badge" style="background:#E0E7FF; color:#3730A3;">↪ ย้ายรอบ</span>`
       : '';
+    const countdownRow = (eff === 'pending' && b.created_at)
+      ? `<div class="card-countdown-row">
+           <span>⏳ ชำระภายใน</span>
+           <span class="countdown" data-countdown-from="${escapeHtml(b.created_at)}">--:--</span>
+         </div>`
+      : '';
+    const ctaText = CTA_PRIMARY[eff] || 'คลิกเพื่อดูรายละเอียด';
+    const ctaClass = CTA_SECONDARY_STATUSES.has(eff) ? 'card-cta secondary' : 'card-cta';
+
     const card = document.createElement('div');
     card.className = 'booking-card';
     card.style.cursor = 'pointer';
@@ -1226,10 +1288,15 @@ function renderLkList() {
         </div>
       </div>
       <div style="font-size:12px; color:var(--muted);">${escapeHtml(b.name)}</div>
+      ${countdownRow}
+      <div class="${ctaClass}">${ctaText}</div>
     `;
     card.onclick = () => { state.lkCurrent = b; renderLkDetail(); showLstep('detail'); };
     root.appendChild(card);
   }
+
+  // Activate any countdowns the new cards introduced
+  startAllCountdowns();
 }
 
 $('lk-back-phone').onclick = () => { state.lkBookings = []; showLstep('phone'); };
