@@ -26,14 +26,13 @@ const BANK_INFO = {
 
 const SLOT_CAPACITY = 100;
 const MAX_PEOPLE_PER_BOOKING = 5;
-const BOOKING_DATES = [
-  '2026-05-15', '2026-05-16', '2026-05-17', '2026-05-18', '2026-05-19',
-  '2026-05-20', '2026-05-21', '2026-05-22', '2026-05-23', '2026-05-24',
-];
 const TIME_SLOTS = [
   '10:00', '11:00', '12:00', '13:00', '14:00',
   '15:00', '16:00', '17:00', '18:00', '19:00',
 ];
+const DEFAULT_BOOKING_RANGE = { start: '2026-05-15', end: '2026-05-24' };
+// BOOKING_DATES is computed from settings after the DB opens — see refreshBookingDates() below.
+let BOOKING_DATES = [];
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -55,6 +54,63 @@ function setSetting(key, value) {
     VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(key, value);
+}
+
+// ─── Site settings: booking date range + manual open toggle ────────────
+function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function isValidISODate(s) {
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s + 'T00:00:00').getTime());
+}
+function computeBookingDates() {
+  const start = getSetting('booking_start_date', DEFAULT_BOOKING_RANGE.start);
+  const end   = getSetting('booking_end_date',   DEFAULT_BOOKING_RANGE.end);
+  if (!isValidISODate(start) || !isValidISODate(end)) return [];
+  const startD = new Date(start + 'T00:00:00');
+  const endD   = new Date(end   + 'T00:00:00');
+  if (startD > endD) return [];
+  const out = [];
+  for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    out.push(`${y}-${m}-${day}`);
+  }
+  return out;
+}
+function refreshBookingDates() {
+  BOOKING_DATES = computeBookingDates();
+}
+refreshBookingDates();
+
+// Returns one of: 'open' | 'closed-pre' | 'closed-post' | 'closed-manual'
+// + helpers to consume on the customer side.
+function getSiteState() {
+  const start = getSetting('booking_start_date', DEFAULT_BOOKING_RANGE.start);
+  const end   = getSetting('booking_end_date',   DEFAULT_BOOKING_RANGE.end);
+  const manualMode = getSetting('site_manual_mode', 'auto'); // 'auto' | 'open' | 'closed'
+  const today = todayLocalISO();
+
+  let withinRange = false;
+  if (isValidISODate(start) && isValidISODate(end)) {
+    withinRange = today >= start && today <= end;
+  }
+  let state;
+  if (manualMode === 'open')   state = 'open';
+  else if (manualMode === 'closed') state = 'closed-manual';
+  else state = withinRange ? 'open' : (today < start ? 'closed-pre' : 'closed-post');
+
+  return {
+    state,
+    is_open: state === 'open',
+    booking_start_date: start,
+    booking_end_date:   end,
+    manual_mode: manualMode,
+    server_now:    new Date().toISOString(),
+    today,
+  };
 }
 
 db.exec(`
@@ -356,6 +412,61 @@ app.delete('/api/admin/payment-image', requireAdmin, (req, res) => {
   res.json({ removed });
 });
 
+// ─── Site state (public) + site settings (admin) ────────────────────────
+app.get('/api/site-state', (req, res) => {
+  res.json(getSiteState());
+});
+
+app.get('/api/admin/site-settings', requireAdmin, (req, res) => {
+  res.json({
+    ...getSiteState(),
+    booking_dates: BOOKING_DATES,
+  });
+});
+
+app.post('/api/admin/site-settings', requireAdmin, (req, res) => {
+  const body = req.body || {};
+  const errors = {};
+
+  let start = body.booking_start_date;
+  let end   = body.booking_end_date;
+  if (start !== undefined) {
+    if (!isValidISODate(start)) errors.booking_start_date = 'รูปแบบวันที่ไม่ถูกต้อง';
+  }
+  if (end !== undefined) {
+    if (!isValidISODate(end)) errors.booking_end_date = 'รูปแบบวันที่ไม่ถูกต้อง';
+  }
+  if (!Object.keys(errors).length && start && end) {
+    if (new Date(start + 'T00:00:00') > new Date(end + 'T00:00:00')) {
+      errors.booking_end_date = 'วันสุดท้ายต้องไม่ก่อนวันเริ่ม';
+    } else {
+      const days = Math.floor(
+        (new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000
+      ) + 1;
+      if (days > 90) errors.booking_end_date = 'ช่วงวันต้องไม่เกิน 90 วัน';
+    }
+  }
+
+  let manual = body.manual_mode;
+  if (manual !== undefined && !['auto', 'open', 'closed'].includes(manual)) {
+    errors.manual_mode = 'ค่าโหมดไม่ถูกต้อง';
+  }
+
+  if (Object.keys(errors).length) {
+    return res.status(400).json({ error: 'invalid', fields: errors });
+  }
+
+  if (start  !== undefined) setSetting('booking_start_date', start);
+  if (end    !== undefined) setSetting('booking_end_date',   end);
+  if (manual !== undefined) setSetting('site_manual_mode',   manual);
+  refreshBookingDates();
+
+  res.json({
+    ...getSiteState(),
+    booking_dates: BOOKING_DATES,
+  });
+});
+
 app.delete('/api/admin/banner', requireAdmin, (req, res) => {
   let removed = 0;
   for (const ext of BANNER_EXTS) {
@@ -401,6 +512,17 @@ app.get('/api/availability', (req, res) => {
 });
 
 app.post('/api/booking', (req, res) => {
+  const site = getSiteState();
+  if (!site.is_open) {
+    return res.status(403).json({
+      error: 'site_closed',
+      site_state: site.state,
+      booking_start_date: site.booking_start_date,
+      message: site.state === 'closed-pre'
+        ? `เว็บไซต์ยังไม่เปิดให้จอง (เปิด ${site.booking_start_date})`
+        : 'เว็บไซต์ปิดให้บริการชั่วคราว',
+    });
+  }
   const errors = validateBooking(req.body);
   if (Object.keys(errors).length) return res.status(400).json({ error: 'invalid', fields: errors });
 

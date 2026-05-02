@@ -528,6 +528,91 @@
   .badge.cancelled   { background: #F3F4F6; color: #4B5563; }
 
   /* Tagline strip beneath KV */
+  /* ─── Closed-state screen + flip-clock countdown ────── */
+  /* When open, hide the closed screen; when closed, hide booking steps. */
+  #view-new.site-closed .progress,
+  #view-new.site-closed .step { display: none !important; }
+  #closed-screen { padding: 14px 4px 8px; text-align: center; }
+  .closed-icon {
+    font-size: 56px; line-height: 1;
+    margin-bottom: 14px;
+    filter: drop-shadow(0 6px 14px rgba(255,122,109,0.3));
+  }
+  .closed-title {
+    font-size: 24px; font-weight: 800;
+    color: var(--brand-red-dark);
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+  }
+  .closed-sub { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .closed-date {
+    font-size: 18px; font-weight: 800; color: var(--brand-red-dark);
+    margin-bottom: 18px;
+  }
+  .flip-clock {
+    display: flex; gap: 10px;
+    justify-content: center;
+    margin: 8px 0 24px;
+    flex-wrap: wrap;
+  }
+  .flip-unit { text-align: center; }
+  .flip-card {
+    position: relative;
+    width: 72px; height: 92px;
+    background: linear-gradient(180deg, #fff 0%, #fff 49%, #FEF3C7 50%, #FEF3C7 100%);
+    border-radius: 12px;
+    box-shadow:
+      0 8px 18px rgba(255, 122, 109, 0.2),
+      inset 0 -3px 0 rgba(0,0,0,0.05);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 46px; font-weight: 800;
+    color: var(--brand-red-dark);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    transform-origin: center;
+  }
+  .flip-card::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 6px; right: 6px;
+    height: 1px;
+    background: rgba(0,0,0,0.12);
+    z-index: 2;
+    pointer-events: none;
+  }
+  .flip-card.flip {
+    animation: flipPulse 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes flipPulse {
+    0%   { transform: scale(1) rotateX(0deg); }
+    50%  { transform: scale(0.94) rotateX(35deg); opacity: 0.85; }
+    100% { transform: scale(1) rotateX(0deg); }
+  }
+  .flip-label {
+    margin-top: 8px;
+    font-size: 11px; font-weight: 800;
+    color: var(--brand-red-dark);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+  }
+  .closed-cta {
+    margin-top: 14px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .closed-cta a {
+    color: var(--brand-red-dark);
+    font-weight: 800;
+    text-decoration: none;
+    margin-left: 6px;
+  }
+  .closed-cta a:hover { text-decoration: underline; }
+  @media (max-width: 480px) {
+    .flip-card { width: 64px; height: 82px; font-size: 38px; border-radius: 10px; }
+    .closed-title { font-size: 20px; }
+    .closed-date { font-size: 16px; }
+  }
+
   .tagline-strip {
     display: flex; flex-wrap: wrap; gap: 8px;
     justify-content: center; margin-bottom: 18px;
@@ -589,6 +674,39 @@
 
     <!-- ═══ NEW BOOKING FLOW ════════════════════════════════════ -->
     <div class="view active" id="view-new">
+
+      <!-- Closed screen — shown when /api/site-state.is_open is false -->
+      <div id="closed-screen" style="display:none;">
+        <div class="closed-icon" id="closed-icon">⏰</div>
+        <div class="closed-title" id="closed-title">ยังไม่เปิดให้จอง</div>
+        <div class="closed-sub" id="closed-sub">สถานีทุเรียนไอยรา จะเปิดให้จองในวันที่</div>
+        <div class="closed-date" id="closed-date"></div>
+
+        <div class="flip-clock" id="flip-clock">
+          <div class="flip-unit">
+            <div class="flip-card"><span id="flip-days">--</span></div>
+            <div class="flip-label">วัน</div>
+          </div>
+          <div class="flip-unit">
+            <div class="flip-card"><span id="flip-hours">--</span></div>
+            <div class="flip-label">ชั่วโมง</div>
+          </div>
+          <div class="flip-unit">
+            <div class="flip-card"><span id="flip-minutes">--</span></div>
+            <div class="flip-label">นาที</div>
+          </div>
+          <div class="flip-unit">
+            <div class="flip-card"><span id="flip-seconds">--</span></div>
+            <div class="flip-label">วินาที</div>
+          </div>
+        </div>
+
+        <div class="closed-cta">
+          เคยจองไว้แล้ว?
+          <a href="#" id="closed-go-lookup">→ ตรวจสอบสถานะ</a>
+        </div>
+      </div>
+
       <div class="progress">
         <div class="progress-step active" data-ps="1"></div>
         <div class="progress-step" data-ps="2"></div>
@@ -1454,6 +1572,94 @@ updatePeople();
     img.src = '/banner?v=' + encodeURIComponent(meta.uploaded_at || Date.now());
   } catch { /* keep fallback */ }
 })();
+
+// ─── Site open/closed gate + flip-clock countdown ──────────
+let closedCountdownTimer = null;
+function updateFlipCard(id, newVal) {
+  const el = $(id);
+  if (!el || el.textContent === newVal) return;
+  const card = el.closest('.flip-card');
+  if (card) {
+    card.classList.remove('flip');
+    void card.offsetWidth; // restart animation
+    card.classList.add('flip');
+  }
+  el.textContent = newVal;
+}
+function stopClosedCountdown() {
+  if (closedCountdownTimer) { clearInterval(closedCountdownTimer); closedCountdownTimer = null; }
+}
+function startClosedCountdown(targetISODate) {
+  stopClosedCountdown();
+  const target = new Date(targetISODate + 'T00:00:00').getTime();
+  function tick() {
+    const remaining = target - Date.now();
+    if (remaining <= 0) {
+      stopClosedCountdown();
+      checkSiteState(); // refetch — server may now report 'open'
+      return;
+    }
+    const d = Math.floor(remaining / 86400000);
+    const h = Math.floor((remaining % 86400000) / 3600000);
+    const m = Math.floor((remaining % 3600000) / 60000);
+    const s = Math.floor((remaining % 60000) / 1000);
+    updateFlipCard('flip-days',    String(d));
+    updateFlipCard('flip-hours',   String(h).padStart(2, '0'));
+    updateFlipCard('flip-minutes', String(m).padStart(2, '0'));
+    updateFlipCard('flip-seconds', String(s).padStart(2, '0'));
+  }
+  tick();
+  closedCountdownTimer = setInterval(tick, 1000);
+}
+function applySiteState(site) {
+  const view = $('view-new');
+  const closed = $('closed-screen');
+  if (site.is_open) {
+    view.classList.remove('site-closed');
+    closed.style.display = 'none';
+    stopClosedCountdown();
+    return;
+  }
+  view.classList.add('site-closed');
+  closed.style.display = 'block';
+  if (site.state === 'closed-pre') {
+    $('closed-icon').textContent = '⏰';
+    $('closed-title').textContent = 'ยังไม่เปิดให้จอง';
+    $('closed-sub').textContent = 'สถานีทุเรียนไอยรา จะเปิดให้จองในวันที่';
+    $('closed-date').textContent = fmtDateLong(site.booking_start_date);
+    $('flip-clock').style.display = 'flex';
+    startClosedCountdown(site.booking_start_date);
+  } else if (site.state === 'closed-post') {
+    $('closed-icon').textContent = '🚫';
+    $('closed-title').textContent = 'หมดเขตจอง';
+    $('closed-sub').textContent = 'การจองในรอบนี้ปิดรับแล้ว';
+    $('closed-date').textContent = '';
+    $('flip-clock').style.display = 'none';
+    stopClosedCountdown();
+  } else {
+    // closed-manual
+    $('closed-icon').textContent = '🔒';
+    $('closed-title').textContent = 'ปิดให้บริการชั่วคราว';
+    $('closed-sub').textContent = 'ขออภัย ขณะนี้เว็บไซต์ปิดปรับปรุง กรุณากลับมาใหม่อีกครั้ง';
+    $('closed-date').textContent = '';
+    $('flip-clock').style.display = 'none';
+    stopClosedCountdown();
+  }
+}
+async function checkSiteState() {
+  try {
+    const res = await fetch('/api/site-state');
+    if (!res.ok) return;
+    applySiteState(await res.json());
+  } catch { /* leave UI as-is on network blip */ }
+}
+$('closed-go-lookup').onclick = (e) => {
+  e.preventDefault();
+  document.querySelector('.tab[data-mode="lookup"]').click();
+};
+checkSiteState();
+// Re-check every 60s so the page wakes up when the open date arrives
+setInterval(checkSiteState, 60000);
 </script>
 </body>
 </html>

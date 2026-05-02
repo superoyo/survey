@@ -281,6 +281,83 @@
     font-style: italic;
   }
 
+  /* ─── Site settings ────────────────────────────────────── */
+  .settings-section-title {
+    font-size: 16px; font-weight: 800; color: var(--text);
+    margin-bottom: 4px;
+  }
+  .settings-section-sub {
+    font-size: 12px; color: var(--muted); margin-bottom: 14px;
+  }
+  .field-row {
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .field-row .field { margin-bottom: 14px; min-width: 160px; }
+  .field input[type="date"] {
+    font-family: inherit;
+  }
+  .status-toggle-row {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+  /* iOS-style toggle */
+  .toggle-switch {
+    position: relative; display: inline-block;
+    width: 64px; height: 36px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #D1D5DB;
+    border-radius: 999px;
+    transition: 0.25s;
+  }
+  .toggle-slider::before {
+    position: absolute; content: "";
+    height: 28px; width: 28px;
+    left: 4px; bottom: 4px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.25s;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background: linear-gradient(135deg, var(--brand-green) 0%, var(--brand-green-deep) 100%);
+  }
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(28px);
+  }
+  .site-state-pill {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 999px;
+    font-size: 11px; font-weight: 800;
+    margin-top: 6px;
+  }
+  .site-state-pill.open       { background: #DCFCE7; color: #065F46; border: 1px solid #16A34A; }
+  .site-state-pill.closed     { background: #FEE2E2; color: #991B1B; border: 1px solid #DC2626; }
+  .site-state-pill.override   { background: #FEF3C7; color: #92400E; border: 1px solid #F59E0B; margin-left: 6px; }
+
+  .dates-preview {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    background: var(--brand-cream);
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border-soft);
+  }
+  .dates-preview .chip {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px 9px;
+    font-size: 11px; font-weight: 600;
+    color: var(--text);
+  }
+  .dates-preview-empty { font-size: 12px; color: var(--danger); }
+
   /* ─── Payment settings ─────────────────────────────────── */
   .settings-card {
     background: #fff;
@@ -806,6 +883,7 @@
       </div>
       <div class="topbar-nav">
         <button class="nav-link active" data-view="home">หน้าหลัก</button>
+        <button class="nav-link" data-view="site">ตั้งค่าเว็บไซต์</button>
         <button class="nav-link" data-view="payment">ตั้งค่าการชำระเงิน</button>
         <button class="nav-link" data-view="banner">Banner Upload</button>
       </div>
@@ -904,6 +982,55 @@
         </main>
         </div><!-- /.three-pane -->
       </div><!-- /#view-dashboard -->
+
+      <!-- ─── Site Settings view ─────────────────────────── -->
+      <div id="view-site" style="display:none;">
+        <div class="page-title">ตั้งค่าเว็บไซต์</div>
+        <div class="page-sub">กำหนดวันที่เปิดให้จอง และควบคุมการเปิด-ปิดเว็บไซต์ชั่วคราว</div>
+
+        <div class="settings-card">
+          <div class="status-toggle-row">
+            <div>
+              <div class="settings-section-title">สถานะเว็บไซต์ตอนนี้</div>
+              <div class="settings-section-sub" id="site-state-text">กำลังโหลด...</div>
+              <span id="site-state-pill" class="site-state-pill"></span>
+              <span id="site-override-pill" class="site-state-pill override" style="display:none;">⚙️ บังคับจากผู้ดูแล</span>
+            </div>
+            <label class="toggle-switch" title="เปิด/ปิด เว็บไซต์">
+              <input type="checkbox" id="site-toggle" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <button type="button" class="btn btn-ghost" id="site-reset-auto" style="display:none;">↻ คืนค่าอัตโนมัติ (ตามวันที่)</button>
+            <span id="site-mode-hint" style="font-size:11px; color:var(--muted);"></span>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-section-title">วันที่เปิดให้จอง</div>
+          <div class="settings-section-sub">เว็บจะเปิดอัตโนมัติเมื่อถึง "วันเริ่ม" และปิดอัตโนมัติหลัง "วันสุดท้าย" (ในโหมดอัตโนมัติ)</div>
+          <div class="field-row">
+            <div class="field" style="flex: 1; min-width: 160px;">
+              <label for="site-start-date">วันเริ่ม</label>
+              <input type="date" id="site-start-date" />
+            </div>
+            <div class="field" style="flex: 1; min-width: 160px;">
+              <label for="site-end-date">วันสุดท้าย</label>
+              <input type="date" id="site-end-date" />
+            </div>
+          </div>
+          <div class="field">
+            <label>วันที่จะเปิดให้จอง <span id="site-dates-count" style="color:var(--muted); font-weight:500;"></span></label>
+            <div id="site-dates-preview" class="dates-preview"></div>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+          <button class="btn btn-primary" id="site-save-btn" style="width:auto; padding:14px 28px;">💾 บันทึกการตั้งค่า</button>
+          <span id="site-save-status" style="font-size:13px; color:var(--accent); display:none;">✓ บันทึกแล้ว</span>
+        </div>
+      </div>
 
       <!-- ─── Payment Settings view ──────────────────────── -->
       <div id="view-payment" style="display:none;">
@@ -1122,11 +1249,13 @@ function switchTopView(name) {
   $('view-dashboard').style.display = name === 'dashboard' ? 'block' : 'none';
   $('view-banner').style.display    = name === 'banner'    ? 'block' : 'none';
   $('view-payment').style.display   = name === 'payment'   ? 'block' : 'none';
+  $('view-site').style.display      = name === 'site'      ? 'block' : 'none';
   document.querySelectorAll('.nav-link').forEach(b => {
     const v = b.dataset.view;
     if (v === 'home')    b.classList.toggle('active', name === 'home' || name === 'dashboard');
     if (v === 'banner')  b.classList.toggle('active', name === 'banner');
     if (v === 'payment') b.classList.toggle('active', name === 'payment');
+    if (v === 'site')    b.classList.toggle('active', name === 'site');
   });
 }
 document.querySelectorAll('.nav-link').forEach(btn => {
@@ -1140,6 +1269,7 @@ document.querySelectorAll('.nav-link').forEach(btn => {
     }
     if (target === 'banner')  loadBannerStatus();
     if (target === 'payment') loadPaymentSettings();
+    if (target === 'site')    loadSiteSettings();
   };
 });
 
@@ -1490,6 +1620,134 @@ $('payment-remove-btn').onclick = async () => {
   await api('DELETE', '/api/admin/payment-image');
   await loadPaymentSettings();
 };
+
+// ─── Site settings (date range + open/closed toggle) ──────
+const TH_MONTH_LONG_FOR_SITE = TH_MONTH_LONG; // alias for clarity
+let siteSettingsCache = null;
+
+async function loadSiteSettings() {
+  try {
+    const data = await api('GET', '/api/admin/site-settings');
+    siteSettingsCache = data;
+    $('site-start-date').value = data.booking_start_date;
+    $('site-end-date').value   = data.booking_end_date;
+    renderSiteState(data);
+    renderSiteDatesPreview(data.booking_dates);
+    $('site-save-status').style.display = 'none';
+  } catch {
+    alert('โหลดการตั้งค่าเว็บไซต์ไม่สำเร็จ');
+  }
+}
+
+function renderSiteState(data) {
+  const isOpen = data.is_open;
+  $('site-toggle').checked = isOpen;
+  // State pill
+  const pill = $('site-state-pill');
+  pill.className = 'site-state-pill ' + (isOpen ? 'open' : 'closed');
+  pill.textContent = isOpen ? '🟢 เปิดให้จอง' : '🔴 ปิด';
+
+  // Mode hint + override pill
+  let hint = '';
+  let showReset = false;
+  let showOverride = false;
+  if (data.manual_mode === 'auto') {
+    if (data.state === 'closed-pre') hint = `ตั้งค่าอัตโนมัติ — เปิด ${fmtDateLongTH(data.booking_start_date)}`;
+    else if (data.state === 'open')   hint = `ตั้งค่าอัตโนมัติ — เปิดในช่วง ${fmtDateLongTH(data.booking_start_date)} – ${fmtDateLongTH(data.booking_end_date)}`;
+    else if (data.state === 'closed-post') hint = `ตั้งค่าอัตโนมัติ — ปิดแล้ว (พ้นวันสุดท้าย ${fmtDateLongTH(data.booking_end_date)})`;
+  } else if (data.manual_mode === 'open')   { hint = 'บังคับเปิด (override จากผู้ดูแล)'; showOverride = true; showReset = true; }
+  else if (data.manual_mode === 'closed') { hint = 'บังคับปิด (override จากผู้ดูแล)'; showOverride = true; showReset = true; }
+  $('site-mode-hint').textContent = hint;
+  $('site-override-pill').style.display = showOverride ? 'inline-block' : 'none';
+  $('site-reset-auto').style.display = showReset ? 'inline-flex' : 'none';
+
+  // State text
+  let stateMsg = '';
+  if (data.state === 'open') stateMsg = `เปิดให้ลูกค้าจองตามปกติ`;
+  else if (data.state === 'closed-pre') stateMsg = `ยังไม่ถึงวันเปิด — ลูกค้าจะเห็นหน้านับถอยหลัง`;
+  else if (data.state === 'closed-post') stateMsg = `เลยวันสุดท้ายแล้ว — เว็บไซต์ปิดอัตโนมัติ`;
+  else if (data.state === 'closed-manual') stateMsg = `ปิดด้วยมือ — ลูกค้าจะเห็นข้อความปิดชั่วคราว`;
+  $('site-state-text').textContent = stateMsg;
+}
+
+function renderSiteDatesPreview(dates) {
+  const root = $('site-dates-preview');
+  $('site-dates-count').textContent = dates && dates.length ? `(${dates.length} วัน)` : '';
+  if (!dates || !dates.length) {
+    root.innerHTML = `<span class="dates-preview-empty">⚠️ ช่วงวันไม่ถูกต้อง — กรุณาตรวจสอบ</span>`;
+    return;
+  }
+  root.innerHTML = dates.map(d => {
+    const dt = new Date(d + 'T00:00:00');
+    return `<span class="chip">${dt.getDate()} ${TH_MONTH_LONG_FOR_SITE[dt.getMonth()].slice(0,3)}</span>`;
+  }).join('');
+}
+
+function fmtDateLongTH(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return `${d.getDate()} ${TH_MONTH_LONG_FOR_SITE[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+
+// Toggle click — flip between manual_open and manual_closed
+$('site-toggle').onchange = async (e) => {
+  const wantOpen = e.target.checked;
+  await saveSiteSettings({ manual_mode: wantOpen ? 'open' : 'closed' });
+};
+
+$('site-reset-auto').onclick = async () => {
+  await saveSiteSettings({ manual_mode: 'auto' });
+};
+
+$('site-save-btn').onclick = async () => {
+  await saveSiteSettings({
+    booking_start_date: $('site-start-date').value,
+    booking_end_date:   $('site-end-date').value,
+  });
+};
+
+async function saveSiteSettings(patch) {
+  const btn = $('site-save-btn');
+  if (btn) { btn.disabled = true; }
+  try {
+    const data = await fetchJson('POST', '/api/admin/site-settings', patch);
+    if (data.error) {
+      const fields = data.fields || {};
+      const msg = Object.values(fields).join('\n') || data.message || 'บันทึกไม่สำเร็จ';
+      alert(msg);
+      return;
+    }
+    siteSettingsCache = data;
+    $('site-start-date').value = data.booking_start_date;
+    $('site-end-date').value   = data.booking_end_date;
+    renderSiteState(data);
+    renderSiteDatesPreview(data.booking_dates);
+    $('site-save-status').style.display = 'inline';
+    setTimeout(() => $('site-save-status').style.display = 'none', 2000);
+  } catch {
+    alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Wrapper that returns the parsed JSON even on 4xx (so we can show field errors)
+async function fetchJson(method, url, body) {
+  const opts = { method, headers: {} };
+  if (state.token) opts.headers.Authorization = `Bearer ${state.token}`;
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    state.token = null;
+    localStorage.removeItem('admin_token');
+    showLogin();
+    throw new Error('unauthorized');
+  }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && !data.error) data.error = 'http_' + res.status;
+  return data;
+}
 
 // ─── Date helpers ──────────────────────────────────────────
 function fmtDateLong(iso) {
